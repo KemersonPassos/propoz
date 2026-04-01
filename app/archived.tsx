@@ -106,9 +106,7 @@ export default function ArchivedProposals() {
         .select('*')
         .eq('user_id', user.id)
         .eq('is_archived', true)
-        // .eq('is_deleted', false) <- Não incluído se hard delete for usado, 
-        // mas adicionado caso exista, ignoramos se crashar?
-        // Vou omitir pois home.tsx usa delete() na linha 250: await supabase.from('proposals').delete().eq('id', id);
+        .neq('status', 'excluida')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -141,7 +139,7 @@ export default function ArchivedProposals() {
         style: 'destructive',
         onPress: async () => {
           setProposals(prev => prev.filter(p => p.id !== id));
-          const { error } = await supabase.from('proposals').delete().eq('id', id);
+          const { error } = await supabase.from('proposals').update({ status: 'excluida' }).eq('id', id);
           if (error) {
             Alert.alert('Erro', 'Não foi possível excluir a proposta.');
             fetchArchivedProposals(); 

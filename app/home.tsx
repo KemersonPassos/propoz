@@ -15,7 +15,12 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
+  Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system/legacy';
+import { decode } from 'base64-arraybuffer';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import Svg, { Circle, Line, Path, Polygon, Polyline, Rect } from 'react-native-svg';
@@ -106,6 +111,13 @@ const IconSettings = () => (
     <Path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
   </Svg>
 );
+const IconImage = () => (
+  <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <Rect x={3} y={3} width={18} height={18} rx={2} ry={2} />
+    <Circle cx={8.5} cy={8.5} r={1.5} />
+    <Polyline points="21 15 16 10 5 21" />
+  </Svg>
+);
 const IconArchive = () => (
   <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={C.muted} strokeWidth={2}>
     <Polyline points="21 8 21 21 3 21 3 8" />
@@ -171,6 +183,8 @@ export default function Home() {
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
   const [detailsType, setDetailsType] = useState<'enviadas' | 'aguardando' | 'fechadas' | null>(null);
+  const [totalCreated, setTotalCreated] = useState(0);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const [optionsModalVisible, setOptionsModalVisible] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState<any>(null);
@@ -237,6 +251,13 @@ export default function Home() {
         .eq('status', 'visualizada')
         .order('updated_at', { ascending: false }).limit(1).maybeSingle();
       setLastViewed(viewed ?? null);
+
+      // TRUE TOTAL CRIADAS NO MÊS
+      const { count } = await supabase
+        .from('proposals').select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .gte('created_at', startOfMonth());
+      setTotalCreated(count || 0);
 
       // MAPA DE SERVIÇOS POR CATEGORIA (com id e preço)
       const { data: svcs } = await supabase
@@ -327,6 +348,69 @@ export default function Home() {
     }
   }
 
+  const handleUploadLogo = async () => {
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert('Atenção', 'Você precisa dar permissão para acessar a galeria.');
+      return;
+    }
+
+    const pickerResult = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
+    });
+
+    if (pickerResult.canceled) return;
+
+    try {
+      setUploadingLogo(true);
+      const asset = pickerResult.assets[0];
+
+      // Redimensionamento e Compressão Otimizada
+      const manipResult = await ImageManipulator.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 400 } }],
+        { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+      );
+
+      const base64 = await FileSystem.readAsStringAsync(manipResult.uri, { encoding: 'base64' });
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Usuário não autenticado');
+
+      const fileName = `${user.id}-logo.jpg`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('logos')
+        .upload(fileName, decode(base64), { 
+          contentType: 'image/jpeg',
+          upsert: true
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from('logos').getPublicUrl(fileName);
+
+      // Atualiza profiles com parâmetro de cache busting pra forçar atualização da imagem
+      const finalUrl = `${publicUrl}?t=${Date.now()}`;
+      
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ logo_url: finalUrl })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      setProfile({ ...profile, logo_url: finalUrl });
+    } catch (e: any) {
+      Alert.alert('Erro ao fazer upload', e.message);
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
   const handleLogout = async () => {
     setShowAccountModal(false);
     await supabase.auth.signOut();
@@ -343,7 +427,7 @@ export default function Home() {
   const handleDelete = async (id: string) => {
     const backup = proposals;
     setProposals(prev => prev.filter(p => p.id !== id));
-    const { error } = await supabase.from('proposals').delete().eq('id', id);
+    const { error } = await supabase.from('proposals').update({ status: 'excluida', is_archived: true }).eq('id', id);
     if (error) { setProposals(backup); Alert.alert('Erro', 'Não foi possível excluir.'); }
   };
 
@@ -376,8 +460,8 @@ export default function Home() {
   const aguardando = proposals.filter(p => ['aguardando', 'enviada', 'visualizada'].includes(p.status)).length;
   const aprovadas = proposals.filter(p => p.status === 'fechada').length;
   const fechado = proposals.filter(p => p.status === 'fechada').reduce((s, p) => s + (Number(p.total_value ?? p.value) || 0), 0);
-  const taxa = total > 0 ? Math.round((aprovadas / total) * 100) : 0;
-  const restantes = Math.max(0, 5 - total);
+  const taxa = totalCreated > 0 ? Math.round((aprovadas / totalCreated) * 100) : 0;
+  const restantes = Math.max(0, 5 - totalCreated);
 
   return (
     <TouchableWithoutFeedback onPress={closeSwipeables}>
@@ -396,7 +480,11 @@ export default function Home() {
               activeOpacity={0.7}
               onPress={() => setShowAccountModal(true)}
             >
-              <Text style={s.avatarTxt}>{userName ? userName.substring(0, 1).toUpperCase() : 'U'}</Text>
+              {profile?.logo_url ? (
+                <Image source={{ uri: profile.logo_url }} style={{ width: '100%', height: '100%', borderRadius: 20 }} />
+              ) : (
+                <Text style={s.avatarTxt}>{userName ? userName.substring(0, 1).toUpperCase() : 'U'}</Text>
+              )}
             </TouchableOpacity>
           </View>
           <View style={s.metricsRow}>
@@ -523,7 +611,7 @@ export default function Home() {
             <View style={s.statCard}>
               <Text style={s.statLbl}>Taxa fechamento</Text>
               <Text style={s.statVal}>{taxa}%</Text>
-              <Text style={s.statSub}>{aprovadas} de {total} propostas</Text>
+              <Text style={s.statSub}>{aprovadas} de {totalCreated} propostas</Text>
             </View>
             <TouchableOpacity style={[s.statCard, s.statLast]} activeOpacity={0.7} onPress={() => router.push('/upgrade' as any)}>
               <Text style={s.statLbl}>Propostas restantes</Text>
@@ -556,12 +644,26 @@ export default function Home() {
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
               <View style={s.accountBox}>
-                <View style={s.accountRow}>
-                  <View style={s.accountIconBg}>
-                    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-                      <Path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" stroke={C.blue} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                    </Svg>
-                  </View>
+                <View style={[s.accountRow, { alignItems: 'center' }]}>
+                  <TouchableOpacity 
+                    style={[s.accountIconBg, { overflow: 'hidden', position: 'relative' }]} 
+                    activeOpacity={0.7} 
+                    onPress={handleUploadLogo}
+                    disabled={uploadingLogo}
+                  >
+                    {uploadingLogo ? (
+                      <ActivityIndicator color={C.blue} />
+                    ) : profile?.logo_url ? (
+                      <Image source={{ uri: profile.logo_url }} style={{ width: '100%', height: '100%' }} />
+                    ) : (
+                      <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+                        <Path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" stroke={C.blue} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                      </Svg>
+                    )}
+                    <View style={{ position: 'absolute', bottom: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.5)', width: '100%', paddingVertical: 2, alignItems: 'center' }}>
+                      <Text style={{ color: '#fff', fontSize: 8, fontWeight: 'bold' }}>EDITAR</Text>
+                    </View>
+                  </TouchableOpacity>
                   <View>
                     <Text style={s.accountName}>{profile?.owner_name || 'Nome não definido'}</Text>
                     <Text style={s.accountEmail}>{userEmail}</Text>
@@ -581,6 +683,18 @@ export default function Home() {
                   <IconLock />
                   <Text style={s.actionRowText}>Alterar senha de acesso</Text>
                   <Text style={{ color: C.blue, fontWeight: '700' }}>Alterar</Text>
+                </TouchableOpacity>
+
+                <View style={[s.divider, { marginVertical: 14 }]} />
+
+                <TouchableOpacity style={s.actionRow} onPress={handleUploadLogo} disabled={uploadingLogo}>
+                  <IconImage />
+                  <Text style={s.actionRowText}>Importar Logotipo</Text>
+                  {uploadingLogo ? (
+                    <ActivityIndicator size="small" color={C.blue} />
+                  ) : (
+                    <Text style={{ color: C.blue, fontWeight: '700' }}>Alterar</Text>
+                  )}
                 </TouchableOpacity>
 
                 <View style={[s.divider, { marginVertical: 14 }]} />
