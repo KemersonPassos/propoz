@@ -60,21 +60,25 @@ export default function App() {
   // Função auxiliar para decidir para onde mandar o usuário logado
   async function checkOnboardingAndRedirect(userId: string) {
     try {
-      const { data: profile, error } = await supabase
+      const { data: profile } = await supabase
         .from('profiles')
-        .select('onboarding_completed')
+        .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
-      // Se o perfil existe e o onboarding está concluído, vai para Home
-      if (profile && profile.onboarding_completed) {
+      const { count: servicesCount } = await supabase
+        .from('services')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId);
+
+      // Se o perfil tem a flag, ou se já existem serviços salvos no banco, o onboarding acabou!
+      if ((profile && profile.onboarding_completed) || (servicesCount && servicesCount > 0)) {
         router.replace('/home');
       } else {
-        // Se não tem perfil ou não concluiu, vai para Onboarding
         router.replace('/onboarding/areas');
       }
     } catch (e) {
-      // Caso ocorra algum erro (como perfil não criado ainda), manda para Onboarding
+      // Caso ocorra erro severo, manda para Onboarding
       router.replace('/onboarding/areas');
     }
   }

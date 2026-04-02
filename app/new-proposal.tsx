@@ -8,7 +8,7 @@ import {
   SafeAreaView, ScrollView,
   Share,
   StatusBar,
-  StyleSheet, Text, TextInput, TouchableOpacity, View
+  StyleSheet, Text, TextInput, TouchableOpacity, View, Image
 } from 'react-native';
 import Svg, { Circle, Path, Polyline } from 'react-native-svg';
 import { supabase } from '../lib/supabase';
@@ -83,14 +83,17 @@ export default function NewProposal() {
     try {
       // 1. Carregar perfil para checar plano
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-        setProfile(prof);
+      if (!user) {
+        setLoadingCatalog(false);
+        return;
       }
 
-      // 2. Carregar catálogo
+      const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+      setProfile(prof);
+
+      // 2. Carregar catálogo APENAS do usuário logado
       const { data, error } = await supabase
-        .from('services').select('*').eq('is_active', true).order('category', { ascending: true });
+        .from('services').select('*').eq('user_id', user.id).eq('is_active', true).order('category', { ascending: true });
       if (error) throw error;
       setServices(data || []);
     } catch (error) {
@@ -328,10 +331,14 @@ export default function NewProposal() {
             <ScrollView style={s.previewScroll} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
               <View style={s.proposalPaper}>
                 <View style={s.paperHeader}>
-                  <NodeLogo />
+                  {profile?.logo_url ? (
+                    <Image source={{ uri: profile.logo_url }} style={s.logoContainer} />
+                  ) : (
+                    <NodeLogo />
+                  )}
                   <View>
-                    <Text style={s.paperBrand}>Node Tech</Text>
-                    <Text style={s.paperSubBrand}>Segurança e Tecnologia</Text>
+                    <Text style={s.paperBrand}>{profile?.owner_name || 'Minha Empresa'}</Text>
+                    <Text style={s.paperSubBrand}>Proposta Comercial</Text>
                   </View>
                 </View>
 

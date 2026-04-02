@@ -116,11 +116,11 @@ export default function SetupServices() {
       // 2. Tenta marcar o onboarding como concluído no perfil
       const { error: profError } = await supabase
         .from('profiles')
-        .update({ 
+        .upsert({ 
+          id: user.id,
           onboarding_completed: true,
           service_category: selectedAreas.join(',')
-        })
-        .eq('id', user.id);
+        });
 
       // Se der erro aqui, é quase certeza que falta a Policy de UPDATE no Supabase
       if (profError) {

@@ -228,8 +228,14 @@ export default function Home() {
       setUserEmail(user.email || '');
 
       // CONSULTA DO PERFIL
-      const { data: prof } = await supabase
-        .from('profiles').select('*').eq('id', user.id).single();
+      let { data: prof } = await supabase
+        .from('profiles').select('*').eq('id', user.id).maybeSingle();
+
+      if (!prof) {
+        // Se o banco não tem a linha do perfil ainda (erro PGRST116 na trigger), nós criamos agora:
+        const { data: newProf } = await supabase.from('profiles').upsert({ id: user.id }).select('*').single();
+        prof = newProf;
+      }
 
       setProfile(prof);
       if (prof?.owner_name) setUserName(prof.owner_name.split(' ')[0]);
@@ -665,7 +671,7 @@ export default function Home() {
                     </View>
                   </TouchableOpacity>
                   <View>
-                    <Text style={s.accountName}>{profile?.owner_name || 'Nome não definido'}</Text>
+                    <Text style={s.accountName}>{profile?.company_name || profile?.owner_name || 'Nome não definido'}</Text>
                     <Text style={s.accountEmail}>{userEmail}</Text>
                   </View>
                 </View>
