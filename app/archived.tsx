@@ -124,7 +124,11 @@ export default function ArchivedProposals() {
 
   const handleUnarchive = async (id: string) => {
     setProposals(prev => prev.filter(p => p.id !== id));
-    const { error } = await supabase.from('proposals').update({ is_archived: false }).eq('id', id);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { fetchArchivedProposals(); return; }
+
+    const { error } = await supabase.from('proposals').update({ is_archived: false }).eq('id', id).eq('user_id', user.id);
     if (error) {
       Alert.alert('Erro', 'Não foi possível desarquivar a proposta.');
       fetchArchivedProposals();
@@ -139,7 +143,11 @@ export default function ArchivedProposals() {
         style: 'destructive',
         onPress: async () => {
           setProposals(prev => prev.filter(p => p.id !== id));
-          const { error } = await supabase.from('proposals').update({ status: 'excluida' }).eq('id', id);
+
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) { fetchArchivedProposals(); return; }
+
+          const { error } = await supabase.from('proposals').update({ status: 'excluida' }).eq('id', id).eq('user_id', user.id);
           if (error) {
             Alert.alert('Erro', 'Não foi possível excluir a proposta.');
             fetchArchivedProposals(); 

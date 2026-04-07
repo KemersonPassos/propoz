@@ -11,7 +11,8 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
+  Image
 } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import ConfettiCannon from 'react-native-confetti-cannon';
@@ -167,7 +168,11 @@ export default function PublicProposal() {
       <ScrollView style={s.scrollArea} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={s.proposalPaper}>
           <View style={s.paperHeader}>
-            <NodeLogo />
+            {vendor?.logo_url ? (
+              <Image source={{ uri: vendor.logo_url }} style={s.logoContainer} />
+            ) : (
+              <NodeLogo />
+            )}
             <View>
               <Text style={s.paperBrand}>{vendor?.company_name || 'Node Tech'}</Text>
               <Text style={s.paperSubBrand}>{vendor?.city || 'Segurança e Tecnologia'}</Text>

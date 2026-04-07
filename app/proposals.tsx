@@ -288,9 +288,6 @@ export default function ProposalsTab() {
                           >
                             <Text style={styles.btnSmGreenText}>Enviar no WhatsApp</Text>
                           </TouchableOpacity>
-                          <TouchableOpacity style={styles.btnSmOutline} activeOpacity={0.8}>
-                            <Text style={styles.btnSmOutlineText}>Marcar aprovada</Text>
-                          </TouchableOpacity>
                         </View>
                       </View>
                     )}

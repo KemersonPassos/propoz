@@ -8,9 +8,11 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
+  Linking
 } from 'react-native';
 import Svg, { Circle, Line, Polyline } from 'react-native-svg';
+import { supabase } from '../lib/supabase';
 
 // ─────────────────────────────────────────
 // DESIGN TOKENS
@@ -59,6 +61,17 @@ const IconCheckCircle = ({ color = C.blue }) => (
 // ─────────────────────────────────────────
 export default function ProactiveUpgradeScreen() {
   const router = useRouter();
+  const [userPlan, setUserPlan] = React.useState('free');
+
+  React.useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        supabase.from('profiles').select('plan').eq('id', user.id).single().then(({ data, error }) => {
+          if (data && !error) setUserPlan(data.plan || 'free');
+        });
+      }
+    });
+  }, []);
 
   const benefits = [
     { text: "Orçamentos e propostas ilimitadas", isSoon: false },
@@ -110,7 +123,7 @@ export default function ProactiveUpgradeScreen() {
 
         {/* PRICING CALLOUT */}
         <View style={styles.pricingBox}>
-          <Text style={styles.pricingVal}>R$ 29<Text style={styles.pricingPeriod}> /mês</Text></Text>
+          <Text style={styles.pricingVal}>R$ 19,90<Text style={styles.pricingPeriod}> /mês</Text></Text>
           <Text style={styles.pricingSub}>Menos de R$ 1 por dia. Sem taxas surpresas.</Text>
         </View>
 
@@ -118,10 +131,31 @@ export default function ProactiveUpgradeScreen() {
 
       {/* FOOTER CTA */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.btnPrimary} activeOpacity={0.8} onPress={() => {}}>
-          <Text style={styles.btnPrimaryTxt}>Assinar Plano Pro</Text>
-        </TouchableOpacity>
-        <Text style={styles.cancelTxt}>Cancele quando quiser</Text>
+        {userPlan === 'pro' ? (
+          <>
+            <View style={[styles.btnPrimary, { backgroundColor: C.greenBg, elevation: 0, shadowOpacity: 0 }]}>
+              <Text style={[styles.btnPrimaryTxt, { color: C.green }]}>Esse é o seu plano atual</Text>
+            </View>
+            <TouchableOpacity onPress={() => Linking.openURL('https://wa.me/5551992731667?text=Ol%C3%A1%2C%20gostaria%20de%20cancelar%20minha%20assinatura%20Pro')}>
+              <Text style={[styles.cancelTxt, { color: '#ef4444', textDecorationLine: 'underline', marginTop: 4 }]}>Solicitar cancelamento da assinatura</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <TouchableOpacity style={styles.btnPrimary} activeOpacity={0.8} onPress={async () => {
+              // Busca o e-mail do usuário para auto-preencher lá no Abacate Pay se for possível via URL
+              const { data: { user } } = await supabase.auth.getUser();
+              
+              // COLE SEU LINK DO ABACATE PAY AQUI NAS ASPAS ABAIXO:
+              const abacatePayUrl = 'https://abacatepay.com/pay/prod_CHdPy16wq0cf3mZ4K1Py23JG' + (user?.email ? `?email=${user.email}` : '');
+              
+              Linking.openURL(abacatePayUrl);
+            }}>
+              <Text style={styles.btnPrimaryTxt}>Assinar Plano Pro</Text>
+            </TouchableOpacity>
+            <Text style={styles.cancelTxt}>Cancele quando quiser</Text>
+          </>
+        )}
       </View>
     </View>
   );

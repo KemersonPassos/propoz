@@ -60,3 +60,4 @@ app-example
 
 # Gemini / AI
 .gemini/
+.blackboxcli/

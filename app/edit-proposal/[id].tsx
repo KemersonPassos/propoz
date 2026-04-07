@@ -21,8 +21,11 @@ export default function EditProposal() {
         const { data: cat } = await supabase.from('services').select('*').eq('is_active', true);
         setServices(cat || []);
 
-        // 2. Busca a proposta atual
-        const { data: prop, error } = await supabase.from('proposals').select('*').eq('id', id).single();
+        // 2. Busca a proposta atual e valida o dono
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Acesso negado");
+
+        const { data: prop, error } = await supabase.from('proposals').select('*').eq('id', id).eq('user_id', user.id).single();
         if (error) throw error;
 
         setClientName(prop.client_name);
@@ -76,6 +79,9 @@ export default function EditProposal() {
         (prev.price * prev.qty > curr.price * curr.qty) ? prev : curr
       );
 
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Acesso negado");
+
       const { error } = await supabase
         .from('proposals')
         .update({
@@ -84,7 +90,8 @@ export default function EditProposal() {
           value: calculateTotal(),
           service_type: `${mainService.category} · ${itemsArray.length} itens`
         })
-        .eq('id', id);
+        .eq('id', id)
+        .eq('user_id', user.id);
 
       if (error) throw error;
       Alert.alert("Sucesso", "Orçamento atualizado!");

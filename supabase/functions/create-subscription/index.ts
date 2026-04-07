@@ -46,7 +46,7 @@ serve(async (req: Request) => {
       body: JSON.stringify({
         customer: customer.id,
         billingType: 'PIX', 
-        value: 29.90,
+        value: 19.90,
         nextDueDate: new Date().toISOString().split('T')[0], // Hoje
         cycle: 'MONTHLY',
         description: 'Assinatura Node Tech - Mensal'

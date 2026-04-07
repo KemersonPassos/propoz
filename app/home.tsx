@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -286,6 +286,18 @@ export default function Home() {
       setLoading(false); setRefreshing(false);
     }
   }
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      const channel = supabase.channel('profile-updates')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` }, (payload) => {
+          if (payload.new) {
+            setProfile(payload.new as any);
+          }
+        }).subscribe();
+      return () => { supabase.removeChannel(channel); };
+    });
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -426,21 +438,33 @@ export default function Home() {
   const handleArchive = async (id: string) => {
     const backup = proposals;
     setProposals(prev => prev.filter(p => p.id !== id));
-    const { error } = await supabase.from('proposals').update({ is_archived: true }).eq('id', id);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setProposals(backup); return; }
+
+    const { error } = await supabase.from('proposals').update({ is_archived: true }).eq('id', id).eq('user_id', user.id);
     if (error) { setProposals(backup); Alert.alert('Erro', 'Não foi possível arquivar.'); }
   };
 
   const handleDelete = async (id: string) => {
     const backup = proposals;
     setProposals(prev => prev.filter(p => p.id !== id));
-    const { error } = await supabase.from('proposals').update({ status: 'excluida', is_archived: true }).eq('id', id);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setProposals(backup); return; }
+
+    const { error } = await supabase.from('proposals').update({ status: 'excluida', is_archived: true }).eq('id', id).eq('user_id', user.id);
     if (error) { setProposals(backup); Alert.alert('Erro', 'Não foi possível excluir.'); }
   };
 
   const handleApprove = async (id: string) => {
     const backup = proposals;
     setProposals(prev => prev.map(p => p.id === id ? { ...p, status: 'fechada' } : p));
-    const { error } = await supabase.from('proposals').update({ status: 'fechada' }).eq('id', id);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setProposals(backup); return; }
+
+    const { error } = await supabase.from('proposals').update({ status: 'fechada' }).eq('id', id).eq('user_id', user.id);
     if (error) {
       setProposals(backup);
       Alert.alert('Erro', 'Não foi possível aprovar.');
@@ -747,9 +771,13 @@ export default function Home() {
 
               {/* CARD PLANO PRO */}
               <View style={[s.planCard, s.planCardPro]}>
-                <View style={s.recommendedBadge}><Text style={s.badgeText}>RECOMENDADO</Text></View>
+                {profile?.plan === 'pro' ? (
+                  <View style={[s.recommendedBadge, { backgroundColor: C.greenBg, borderColor: C.greenBdr, borderWidth: 1 }]}><Text style={[s.badgeText, { color: C.greenText }]}>SEU PLANO ATUAL</Text></View>
+                ) : (
+                  <View style={s.recommendedBadge}><Text style={s.badgeText}>RECOMENDADO</Text></View>
+                )}
                 <Text style={s.planNameLabel}>Pro</Text>
-                <Text style={[s.planPrice, { color: C.blue }]}>R$ 29<Text style={s.planPeriod}>/mês</Text></Text>
+                <Text style={[s.planPrice, { color: C.blue }]}>R$ 19,90<Text style={s.planPeriod}>/mês</Text></Text>
                 <View style={s.featureList}>
                   <View style={s.featureRow}><IconCheckCircle /><Text style={s.featureText}>Propostas ilimitadas</Text></View>
                   <View style={s.featureRow}><IconCheckCircle /><Text style={s.featureText}>Rastreamento de abertura</Text></View>
@@ -760,7 +788,7 @@ export default function Home() {
 
                 {profile?.plan !== 'pro' && (
                   <TouchableOpacity style={s.btnUpgrade} onPress={() => { setShowAccountModal(false); router.push('/upgrade' as any); }}>
-                    <Text style={s.btnUpgradeTxt}>Assinar Pro — R$ 29/mês</Text>
+                    <Text style={s.btnUpgradeTxt}>Assinar Pro — R$ 19,90/mês</Text>
                   </TouchableOpacity>
                 )}
               </View>

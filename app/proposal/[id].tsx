@@ -85,25 +85,26 @@ export default function ProposalDetails() {
   useEffect(() => {
     async function fetchData() {
       try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Acesso negado");
+
         const { data: proposalData, error: propError } = await supabase
           .from('proposals')
           .select('*')
           .eq('id', id)
+          .eq('user_id', user.id)
           .single();
 
         if (propError) throw propError;
         setProposal(proposalData);
 
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: profileData } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', user.id)
-            .single();
-          
-          if (profileData) setProfile(profileData);
-        }
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
+        
+        if (profileData) setProfile(profileData);
       } catch (error: any) {
         Alert.alert('Erro', 'Não foi possível carregar os detalhes.');
         router.back();
