@@ -16,6 +16,7 @@ import {
   TouchableWithoutFeedback,
   View,
   Image,
+  Share,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -27,12 +28,20 @@ import Svg, { Circle, Line, Path, Polygon, Polyline, Rect } from 'react-native-s
 import BottomNav from '../components/BottomNav';
 import { C } from '../constants/colors';
 import { supabase } from '../lib/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 
 
 // ─────────────────────────────────────────
 // SVG ICONS
 // ─────────────────────────────────────────
+const IconBell = ({ color = '#fff' }) => (
+  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+    <Path d="M13.73 21a2 2 0 0 1-3.46 0" />
+  </Svg>
+);
+
 const IconEye = () => (
   <Svg width={17} height={17} viewBox="0 0 24 24" fill="none">
     <Path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" stroke="#fff" strokeWidth={2.2} />
@@ -182,13 +191,20 @@ export default function Home() {
   const [lastViewed, setLastViewed] = useState<any>(null);
   const [showAccountModal, setShowAccountModal] = useState(false);
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
-  const [detailsType, setDetailsType] = useState<'enviadas' | 'aguardando' | 'fechadas' | null>(null);
+  const [detailsType, setDetailsType] = useState<'enviadas' | 'aguardando' | 'fechadas' | 'notificacoes' | null>(null);
   const [totalCreated, setTotalCreated] = useState(0);
   const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const [optionsModalVisible, setOptionsModalVisible] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState<any>(null);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [seenVisualizedIds, setSeenVisualizedIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    AsyncStorage.getItem('seenVisualizedIds').then(val => {
+      if(val) setSeenVisualizedIds(JSON.parse(val));
+    });
+  }, []);
 
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -216,10 +232,12 @@ export default function Home() {
     if (detailsType === 'enviadas') return proposals; // já filtrado de excluídas/arquivadas no fetchData
     if (detailsType === 'aguardando') return proposals.filter(p => ['aguardando', 'visualizada'].includes(p.status));
     if (detailsType === 'fechadas') return proposals.filter(p => p.status === 'fechada');
+    if (detailsType === 'notificacoes') return proposals.filter(p => p.status === 'visualizada');
     return [];
   };
 
   const filteredProposals = getFilteredProposals();
+  const viewedProposalsCount = proposals.filter(p => p.status === 'visualizada' && !seenVisualizedIds.includes(p.id)).length;
 
   async function fetchData() {
     try {
@@ -505,17 +523,38 @@ export default function Home() {
               <Text style={s.greetLabel}>{greeting()}</Text>
               <Text style={s.greetName}>{userName || 'Técnico'}</Text>
             </View>
-            <TouchableOpacity
-              style={s.avatar}
-              activeOpacity={0.7}
-              onPress={() => setShowAccountModal(true)}
-            >
-              {profile?.logo_url ? (
-                <Image source={{ uri: profile.logo_url }} style={{ width: '100%', height: '100%', borderRadius: 20 }} />
-              ) : (
-                <Text style={s.avatarTxt}>{userName ? userName.substring(0, 1).toUpperCase() : 'U'}</Text>
-              )}
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
+              <TouchableOpacity
+                onPress={() => { 
+                  setDetailsType('notificacoes'); 
+                  setDetailsModalVisible(true);
+                  const newlySeen = proposals.filter(p => p.status === 'visualizada').map(p => p.id);
+                  const combined = [...new Set([...seenVisualizedIds, ...newlySeen])];
+                  setSeenVisualizedIds(combined);
+                  AsyncStorage.setItem('seenVisualizedIds', JSON.stringify(combined));
+                }}
+                style={{ position: 'relative', padding: 4 }}
+                activeOpacity={0.7}
+              >
+                <IconBell color="#fff" />
+                {viewedProposalsCount > 0 && (
+                  <View style={{ position: 'absolute', top: -2, right: -4, backgroundColor: C.orange, width: 16, height: 16, borderRadius: 8, justifyContent: 'center', alignItems: 'center' }}>
+                    <Text style={{ color: '#fff', fontSize: 10, fontWeight: 'bold' }}>{viewedProposalsCount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.avatar}
+                activeOpacity={0.7}
+                onPress={() => setShowAccountModal(true)}
+              >
+                {profile?.logo_url ? (
+                  <Image source={{ uri: profile.logo_url }} style={{ width: '100%', height: '100%', borderRadius: 20 }} />
+                ) : (
+                  <Text style={s.avatarTxt}>{userName ? userName.substring(0, 1).toUpperCase() : 'U'}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
           <View style={s.metricsRow}>
             <TouchableOpacity
@@ -815,7 +854,8 @@ export default function Home() {
                 <Text style={s.bottomSheetTitle}>
                   {detailsType === 'enviadas' ? 'Propostas Enviadas' :
                     detailsType === 'aguardando' ? 'Aguardando Resposta' :
-                      'Orçamentos Fechados'}
+                      detailsType === 'notificacoes' ? 'Propostas Visualizadas' :
+                        'Orçamentos Fechados'}
                 </Text>
                 <TouchableOpacity onPress={() => setDetailsModalVisible(false)} style={s.closeBtnSheet}>
                   <IconClose />
@@ -839,7 +879,15 @@ export default function Home() {
                     const val = Number(item.total_value ?? item.value) || 0;
                     const isFechada = item.status === 'fechada';
                     return (
-                      <View key={item.id} style={s.detailRow}>
+                      <TouchableOpacity 
+                        key={item.id} 
+                        style={s.detailRow}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          setDetailsModalVisible(false);
+                          router.push(`/proposal/${item.id}` as any);
+                        }}
+                      >
                         <View style={{ flex: 1 }}>
                           <Text style={s.detailName} numberOfLines={1}>{item.client_name}</Text>
                           <Text style={s.detailStatus}>{tagLabel(item.status)}</Text>
@@ -847,7 +895,7 @@ export default function Home() {
                         <Text style={[s.detailValue, isFechada && { color: C.green, fontWeight: '800' }]}>
                           R$ {val.toLocaleString('pt-BR')}
                         </Text>
-                      </View>
+                      </TouchableOpacity>
                     );
                   })
                 )}
@@ -876,7 +924,16 @@ export default function Home() {
               <TouchableOpacity style={s.optionRow} onPress={() => { setOptionsModalVisible(false); if (selectedProposal) router.push(`/edit-proposal/${selectedProposal.id}` as any); }}>
                 <Text style={s.optionText}>Editar</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.optionRow} onPress={() => { setOptionsModalVisible(false); if (selectedProposal) router.push(`/public/${selectedProposal.id}` as any); }}>
+              <TouchableOpacity style={s.optionRow} onPress={() => { 
+                setOptionsModalVisible(false); 
+                if (selectedProposal) {
+                  const sId = selectedProposal.share_id || selectedProposal.id;
+                  const total = Number(selectedProposal.total_value ?? selectedProposal.value) || 0;
+                  Share.share({
+                    message: `Olá! Segue a proposta de Node Tech para ${selectedProposal.client_name}.\n*Total: R$ ${total.toLocaleString('pt-BR')}*\n\nDetalhes aqui: https://propoz.com.br/view/${sId}`,
+                  });
+                }
+              }}>
                 <Text style={s.optionText}>Compartilhar</Text>
               </TouchableOpacity>
               <TouchableOpacity style={s.optionRow} onPress={() => { setOptionsModalVisible(false); if (selectedProposal) handleArchive(selectedProposal.id); }}>

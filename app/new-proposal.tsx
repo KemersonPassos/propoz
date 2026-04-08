@@ -183,12 +183,12 @@ export default function NewProposal() {
         warranty: garantia,
         execution_time: prazo,
         notes: observacoes
-      }]).select().single();
+      }]).select('id, share_id').single();
 
       if (error) throw error;
 
       if (shouldShare) {
-        const shareUrl = `https://propoz.com.br/public/${data.id}`;
+        const shareUrl = `https://propoz.com.br/view/${data.share_id || data.id}`;
         await Share.share({
           message: `Olá! Segue a proposta de Node Tech para ${clientName}.\n*Total: R$ ${total.toLocaleString('pt-BR')}*\n\nDetalhes aqui: ${shareUrl}`,
         });

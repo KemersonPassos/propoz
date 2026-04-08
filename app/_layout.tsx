@@ -7,7 +7,8 @@ export default function Layout() {
       <Stack.Screen name="home" />
       <Stack.Screen name="new-proposal" />
       <Stack.Screen name="proposal/[id]" />
-      <Stack.Screen name="services" /> {/* <-- Adiciona esta linha! */}
+      <Stack.Screen name="view/[shareId]" />
+      <Stack.Screen name="services" />
       <Stack.Screen name="new-service" />
       <Stack.Screen name="profile" />
     </Stack>
