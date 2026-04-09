@@ -60,6 +60,13 @@ const IconDoc = ({ size = 24, color = C.blue }) => (
   </Svg>
 );
 
+const IconLock = ({ color = C.muted, size = 14 }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2}>
+    <Rect x={3} y={11} width={18} height={11} rx={2} ry={2} />
+    <Path d="M7 11V7a5 5 0 0110 0v4" />
+  </Svg>
+);
+
 
 
 // ─────────────────────────────────────────
@@ -253,11 +260,17 @@ export default function ProposalsTab() {
 
                     {isExpanded && (
                       <View style={styles.expandedContent}>
-                        {isVisualizada && (
+                        {isVisualizada && userPlan === 'pro' && (
                           <View style={styles.followupAlert}>
                             <IconClock color={C.blue} />
                             <Text style={styles.followupAlertText}>Aberta recentemente — agir agora!</Text>
                           </View>
+                        )}
+                        {isVisualizada && userPlan !== 'pro' && (
+                          <TouchableOpacity style={[styles.followupAlert, { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0', borderWidth: 1, padding: 8, borderRadius: 8 }]} activeOpacity={0.8} onPress={() => router.push('/upgrade' as any)}>
+                            <IconLock color={C.muted} size={16} />
+                            <Text style={[styles.followupAlertText, { color: C.muted }]}>Alerta de visualização exclusivo PRO</Text>
+                          </TouchableOpacity>
                         )}
 
                         <View style={styles.detailsRow}>
@@ -275,10 +288,20 @@ export default function ProposalsTab() {
                           ))}
                         </View>
 
-                        <View style={styles.followupBox}>
-                          <Text style={styles.followupBoxTitle}>Sugestão de mensagem:</Text>
-                          <Text style={styles.followupBoxMsg}>"Oi, vi que você recebeu minha proposta. Posso tirar alguma dúvida sobre os serviços?"</Text>
-                        </View>
+                        {userPlan === 'pro' ? (
+                          <View style={styles.followupBox}>
+                            <Text style={styles.followupBoxTitle}>Sugestão de mensagem:</Text>
+                            <Text style={styles.followupBoxMsg}>"Oi, vi que você recebeu minha proposta. Posso tirar alguma dúvida sobre os serviços?"</Text>
+                          </View>
+                        ) : (
+                          <TouchableOpacity style={[styles.followupBox, { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' }]} activeOpacity={0.9} onPress={() => router.push('/upgrade' as any)}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <IconLock color={C.muted} size={14} />
+                              <Text style={[styles.followupBoxTitle, { color: C.muted, marginBottom: 0 }]}>SUGESTÃO INTELIGENTE</Text>
+                            </View>
+                            <Text style={[styles.followupBoxMsg, { color: C.muted }]}>Assine o plano PRO para ter roteiros de mensagens exatos para fechamento.</Text>
+                          </TouchableOpacity>
+                        )}
 
                         <View style={styles.actionRow}>
                           <TouchableOpacity

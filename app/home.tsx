@@ -227,6 +227,22 @@ export default function Home() {
     }
   };
 
+  const handleNewProposal = () => {
+    if (activeSwipeId) { closeSwipeables(); return; }
+    if (profile?.plan !== 'pro' && totalCreated >= 5) {
+      Alert.alert(
+        "Limite Atingido",
+        "Você atingiu o limite de 5 propostas do plano Free. Faça o upgrade para propostas ilimitadas.",
+        [
+          { text: "Cancelar", style: "cancel" },
+          { text: "Ver Plano Pro", onPress: () => router.push('/upgrade' as any) }
+        ]
+      );
+      return;
+    }
+    router.push('/new-proposal' as any);
+  };
+
   const getFilteredProposals = () => {
     if (!detailsType) return [];
     if (detailsType === 'enviadas') return proposals; // já filtrado de excluídas/arquivadas no fetchData
@@ -526,6 +542,17 @@ export default function Home() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 18 }}>
               <TouchableOpacity
                 onPress={() => { 
+                  if (profile?.plan !== 'pro') {
+                    Alert.alert(
+                      "Recurso PRO",
+                      "Assine o plano PRO para monitorar as visualizações de propostas em tempo real.",
+                      [
+                        { text: "Agora não", style: "cancel" },
+                        { text: "Ver Plano Pro", onPress: () => router.push('/upgrade' as any) }
+                      ]
+                    );
+                    return;
+                  }
                   setDetailsType('notificacoes'); 
                   setDetailsModalVisible(true);
                   const newlySeen = proposals.filter(p => p.status === 'visualizada').map(p => p.id);
@@ -592,7 +619,7 @@ export default function Home() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.blue} />}
           onScrollBeginDrag={closeSwipeables}
         >
-          {lastViewed && (
+          {lastViewed && profile?.plan === 'pro' && (
             <TouchableOpacity style={s.alertCard} onPress={() => {
               if (activeSwipeId) { closeSwipeables(); return; }
               router.push(`/proposal/${lastViewed.id}` as any);
@@ -605,11 +632,18 @@ export default function Home() {
               <IconArrow />
             </TouchableOpacity>
           )}
+          {lastViewed && profile?.plan !== 'pro' && (
+            <TouchableOpacity style={s.alertCard} onPress={() => router.push('/upgrade' as any)} activeOpacity={0.8}>
+              <View style={[s.alertIcon, { backgroundColor: '#F1F5F9' }]}><IconLock /></View>
+              <View style={s.alertBody}>
+                <Text style={[s.alertTitle, { color: C.muted }]} numberOfLines={1}>{lastViewed.client_name} abriu sua proposta</Text>
+                <Text style={[s.alertSub, { color: C.blue, fontWeight: '700' }]}>Exclusivo PRO · Assine para agir rápido</Text>
+              </View>
+              <IconArrow />
+            </TouchableOpacity>
+          )}
 
-          <TouchableOpacity style={s.btnPrimary} onPress={() => {
-            if (activeSwipeId) { closeSwipeables(); return; }
-            router.push('/new-proposal');
-          }} activeOpacity={0.85}>
+          <TouchableOpacity style={s.btnPrimary} onPress={handleNewProposal} activeOpacity={0.85}>
             <IconPlus color={C.white} size={18} />
             <Text style={s.btnPrimaryTxt}>Nova proposta</Text>
           </TouchableOpacity>
