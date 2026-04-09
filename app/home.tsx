@@ -930,7 +930,7 @@ export default function Home() {
                   const sId = selectedProposal.share_id || selectedProposal.id;
                   const total = Number(selectedProposal.total_value ?? selectedProposal.value) || 0;
                   Share.share({
-                    message: `Olá! Segue a proposta de Node Tech para ${selectedProposal.client_name}.\n*Total: R$ ${total.toLocaleString('pt-BR')}*\n\nDetalhes aqui: https://propoz.com.br/view/${sId}`,
+                    message: `Olá! Segue a proposta de Node Tech para ${selectedProposal.client_name}.\n*Total: R$ ${total.toLocaleString('pt-BR')}*\n\nDetalhes aqui: https://propoz-xdbm.vercel.app/view/${sId}`,
                   });
                 }
               }}>

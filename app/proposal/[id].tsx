@@ -128,7 +128,7 @@ export default function ProposalDetails() {
     }
 
     message += `*Valor Total:* R$ ${Number(proposal?.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n\n`;
-    message += `🔗 Veja o detalhamento completo aqui: https://propoz.com.br/public/${proposal.id}\n\n`;
+    message += `🔗 Veja o detalhamento completo aqui: https://propoz-xdbm.vercel.app/view/${proposal.share_id || proposal.id}\n\n`;
     message += `Fico à disposição para qualquer dúvida!\nAtt, *${nomeDono}*`;
 
     const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
@@ -136,7 +136,7 @@ export default function ProposalDetails() {
   };
 
   const copyLink = () => {
-    const url = `https://propoz.com.br/public/${id}`;
+    const url = `https://propoz-xdbm.vercel.app/view/${proposal?.share_id || id}`;
     Clipboard.setString(url);
     Alert.alert('Link copiado', 'O link da proposta foi copiado para a área de transferência.');
   };

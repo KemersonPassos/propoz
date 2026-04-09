@@ -188,7 +188,7 @@ export default function NewProposal() {
       if (error) throw error;
 
       if (shouldShare) {
-        const shareUrl = `https://propoz.com.br/view/${data.share_id || data.id}`;
+        const shareUrl = `https://propoz-xdbm.vercel.app/view/${data.share_id || data.id}`;
         await Share.share({
           message: `Olá! Segue a proposta de Node Tech para ${clientName}.\n*Total: R$ ${total.toLocaleString('pt-BR')}*\n\nDetalhes aqui: ${shareUrl}`,
         });
