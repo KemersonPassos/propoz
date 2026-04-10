@@ -79,20 +79,24 @@ export default function ProposalsTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [userPlan, setUserPlan] = useState<string>('free');
+  const [profile, setProfile] = useState<any>(null);
 
   async function fetchProposals() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. Busca o plano do usuário
-      const { data: profile } = await supabase
+      // 1. Busca os dados do usuário
+      const { data: profileData } = await supabase
         .from('profiles')
-        .select('plan')
+        .select('*')
         .eq('id', user.id)
         .single();
 
-      if (profile) setUserPlan(profile.plan || 'free');
+      if (profileData) {
+        setUserPlan(profileData.plan || 'free');
+        setProfile(profileData);
+      }
 
       // 2. Busca as propostas
       const { data: proposalsData } = await supabase
@@ -173,6 +177,26 @@ export default function ProposalsTab() {
     if (status === 'aguardando') return { bg: styles.tagOrange, text: styles.tagTextOrange };
     return { bg: styles.tagGray, text: styles.tagTextGray };
   }
+
+  const sendWhatsApp = (item: any) => {
+    const nomeEmpresa = profile?.company_name || "Nossa Empresa";
+    const nomeDono = profile?.owner_name || "Consultor";
+    let message = `Olá, *${item.client_name}*!\nSegue a proposta da *${nomeEmpresa}*:\n\n`;
+
+    if (item.items && item.items.length > 0) {
+      item.items.forEach((sub: any) => {
+        message += `✔️ ${sub.qty}x ${sub.name} - R$ ${(sub.price * sub.qty).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n`;
+      });
+      message += '\n';
+    }
+
+    message += `*Valor Total:* R$ ${Number(item.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n\n`;
+    message += `🔗 Veja o detalhamento completo aqui: https://propoz-xdbm.vercel.app/view/${item.share_id || item.id}\n\n`;
+    message += `Fico à disposição para qualquer dúvida!\nAtt, *${nomeDono}*`;
+
+    const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
+    Linking.openURL(url).catch(() => Alert.alert('Erro', 'WhatsApp não instalado.'));
+  };
 
   return (
     <View style={styles.container}>
@@ -307,7 +331,7 @@ export default function ProposalsTab() {
                           <TouchableOpacity
                             style={styles.btnSmGreen}
                             activeOpacity={0.8}
-                            onPress={() => Linking.openURL(`whatsapp://send?text=Olá, ${item.client_name}!`)}
+                            onPress={() => sendWhatsApp(item)}
                           >
                             <Text style={styles.btnSmGreenText}>Enviar no WhatsApp</Text>
                           </TouchableOpacity>
