@@ -17,7 +17,9 @@ import {
 } from 'react-native';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import Svg, { Circle, Line, Path, Polygon, Polyline, Rect } from 'react-native-svg';
+import * as Print from 'expo-print';
 import { supabase } from '../../lib/supabase';
+import { generateProposalPdfHtml } from '../../lib/pdfTemplate';
 
 // Tokens
 const C = {
@@ -98,6 +100,7 @@ export default function ViewProposal() {
   const [loading, setLoading] = useState(true);
   const [showConfetti, setShowConfetti] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -201,6 +204,18 @@ export default function ViewProposal() {
     Linking.openURL(`https://wa.me/55${number}?text=${message}`).catch(() => {
       Alert.alert('Erro', 'Não foi possível abrir o WhatsApp. Tente instalar o aplicativo.');
     });
+  };
+
+  const handleExportPDFClient = async () => {
+    try {
+      setPrinting(true);
+      const html = generateProposalPdfHtml(proposal, vendor);
+      await Print.printAsync({ html });
+    } catch (e: any) {
+      Alert.alert('Erro', 'Falha ao preparar o PDF. ' + e.message);
+    } finally {
+      setPrinting(false);
+    }
   };
 
   if (loading) {
@@ -392,10 +407,15 @@ export default function ViewProposal() {
             {approving ? <ActivityIndicator color="#fff" /> : <Text style={s.btnAprovarTxt}>Aprovar Proposta</Text>}
           </TouchableOpacity>
         )}
-        <TouchableOpacity style={s.btnWppOutline} activeOpacity={0.8} onPress={handleWhatsApp}>
-          <IconWpp fill={C.ink} />
-          <Text style={s.btnWppOutlineTxt}>Falar com {vendor?.owner_name?.split(' ')[0] || 'Consultor'}</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TouchableOpacity style={[s.btnWppOutline, { flex: 1, paddingHorizontal: 0 }]} activeOpacity={0.8} onPress={handleWhatsApp}>
+            <IconWpp fill={C.ink} width={18} height={18} />
+            <Text style={[s.btnWppOutlineTxt, { fontSize: 13 }]}>WhatsApp</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[s.btnDownloadPdf, { flex: 1.5, paddingHorizontal: 0 }]} activeOpacity={0.8} onPress={handleExportPDFClient} disabled={printing}>
+            <Text style={[s.btnDownloadPdfTxt, { fontSize: 13 }]}>{printing ? 'Processando...' : 'Baixar PDF'}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {showConfetti && (
@@ -608,4 +628,10 @@ const s = StyleSheet.create({
     borderRadius: 14, paddingVertical: 16, paddingHorizontal: 24,
   },
   btnWppOutlineTxt: { fontSize: 16, fontWeight: '700', color: C.ink, fontFamily: 'sans-serif' },
+  btnDownloadPdf: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: C.blue,
+    borderRadius: 14, paddingVertical: 16, paddingHorizontal: 24,
+  },
+  btnDownloadPdfTxt: { fontSize: 16, fontWeight: '700', color: '#fff', fontFamily: 'sans-serif' },
 });

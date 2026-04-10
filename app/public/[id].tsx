@@ -45,6 +45,7 @@ export default function PublicProposal() {
   const [loading, setLoading] = useState(true);
   const [showConfetti, setShowConfetti] = useState(false);
   const [approving, setApproving] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -116,7 +117,6 @@ export default function PublicProposal() {
   };
 
   const handleWhatsApp = () => {
-    // Garante que busca um número válido (phone ou whatsapp)
     const phoneToUse = vendor?.phone || vendor?.whatsapp;
     
     if (!phoneToUse) {
@@ -124,13 +124,23 @@ export default function PublicProposal() {
       return;
     }
     
-    // Remove qualquer caractere não numérico
     const number = String(phoneToUse).replace(/\D/g, '');
     const message = encodeURIComponent(`Olá! Estou vendo a proposta para ${proposal?.client_name} e gostaria de falar com o consultor.`);
     
     Linking.openURL(`https://wa.me/55${number}?text=${message}`).catch(() => {
         alert('Não foi possível abrir o WhatsApp. Tente instalar o aplicativo.');
     });
+  };
+
+  const handlePrint = () => {
+    setPrinting(true);
+    if (typeof window !== 'undefined' && window.print) {
+      window.print();
+      setTimeout(() => setPrinting(false), 1000);
+    } else {
+      alert('Impressão/PDF não suportada neste dispositivo.');
+      setPrinting(false);
+    }
   };
 
   if (loading) {
@@ -257,16 +267,25 @@ export default function PublicProposal() {
             )}
           </TouchableOpacity>
         )}
-        
-        <TouchableOpacity 
-          style={proposal.status === 'fechada' ? s.btnSend : s.btnSendOutline} 
-          activeOpacity={0.8} 
-          onPress={handleWhatsApp}
-        >
-          <Text style={proposal.status === 'fechada' ? s.btnSendTxt : s.btnSendOutlineTxt}>
-            Falar com Consultor
-          </Text>
-        </TouchableOpacity>
+
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <TouchableOpacity 
+            style={[s.btnSendOutline, { flex: 1 }]} 
+            activeOpacity={0.8} 
+            onPress={handleWhatsApp}
+          >
+            <Text style={s.btnSendOutlineTxt}>WhatsApp</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[s.btnSend, { flex: 1.5, backgroundColor: C.blue }]}
+            activeOpacity={0.8}
+            onPress={handlePrint}
+            disabled={printing}
+          >
+            <Text style={s.btnSendTxt}>{printing ? 'Aguarde...' : 'Baixar PDF'}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {showConfetti && (
