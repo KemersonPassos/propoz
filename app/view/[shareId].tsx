@@ -265,7 +265,7 @@ export default function ViewProposal() {
     // ── NATIVO (app mobile): usa expo-print igual ao fluxo do app ──
     try {
       setPrinting(true);
-      await Print.printAsync({ html });
+      await Print.printAsync({ html: htmlContent });
     } catch (e: any) {
       Alert.alert('Erro', 'Falha ao preparar o PDF. ' + e.message);
     } finally {
