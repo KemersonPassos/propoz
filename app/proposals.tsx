@@ -1,24 +1,29 @@
 import { router, useFocusEffect } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   LayoutAnimation,
   Linking,
+  Modal,
   Platform,
   RefreshControl,
   ScrollView,
+  Share,
   StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   UIManager,
   View
 } from 'react-native';
+import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 import Svg, {
   Circle,
   Line,
   Path,
+  Polygon,
   Polyline,
   Rect
 } from 'react-native-svg';
@@ -67,6 +72,19 @@ const IconLock = ({ color = C.muted, size = 14 }) => (
   </Svg>
 );
 
+const IconSettings = () => (
+  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2}>
+    <Circle cx={12} cy={12} r={3} />
+    <Path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
+  </Svg>
+);
+
+const IconClose = () => (
+  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={C.ink} strokeWidth={2.5}>
+    <Line x1={18} y1={6} x2={6} y2={18} /><Line x1={6} y1={6} x2={18} y2={18} />
+  </Svg>
+);
+
 
 
 // ─────────────────────────────────────────
@@ -80,6 +98,20 @@ export default function ProposalsTab() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [userPlan, setUserPlan] = useState<string>('free');
   const [profile, setProfile] = useState<any>(null);
+
+  // Swipe / opções
+  const openedRowRef = useRef<any>(null);
+  const [activeSwipeId, setActiveSwipeId] = useState<string | null>(null);
+  const [optionsModalVisible, setOptionsModalVisible] = useState(false);
+  const [selectedProposal, setSelectedProposal] = useState<any>(null);
+
+  const closeSwipeables = () => {
+    if (openedRowRef.current) {
+      openedRowRef.current.close();
+      openedRowRef.current = null;
+      setActiveSwipeId(null);
+    }
+  };
 
   async function fetchProposals() {
     try {
@@ -98,11 +130,13 @@ export default function ProposalsTab() {
         setProfile(profileData);
       }
 
-      // 2. Busca as propostas
+      // 2. Busca as propostas (não arquivadas)
       const { data: proposalsData } = await supabase
         .from('proposals')
         .select('*')
         .eq('user_id', user.id)
+        .neq('status', 'excluida')
+        .eq('is_archived', false)
         .order('created_at', { ascending: false });
 
       if (proposalsData) setProposals(proposalsData);
@@ -126,6 +160,7 @@ export default function ProposalsTab() {
   };
 
   const toggleExpand = (id: string) => {
+    if (activeSwipeId) { closeSwipeables(); return; }
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpandedId(expandedId === id ? null : id);
   };
@@ -151,9 +186,62 @@ export default function ProposalsTab() {
       }
     }
 
-    // Se passou na checagem ou é Pro, vai para a tela de criação
     router.push('/new-proposal' as any);
   };
+
+  // ── Ações das propostas ──
+  const handleArchive = async (id: string) => {
+    const backup = proposals;
+    setProposals(prev => prev.filter(p => p.id !== id));
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setProposals(backup); return; }
+    const { error } = await supabase.from('proposals').update({ is_archived: true }).eq('id', id).eq('user_id', user.id);
+    if (error) { setProposals(backup); Alert.alert('Erro', 'Não foi possível arquivar.'); }
+  };
+
+  const handleDelete = async (id: string) => {
+    Alert.alert(
+      'Excluir proposta',
+      'Tem certeza que deseja excluir esta proposta? Esta ação não pode ser desfeita.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Excluir', style: 'destructive', onPress: async () => {
+            const backup = proposals;
+            setProposals(prev => prev.filter(p => p.id !== id));
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) { setProposals(backup); return; }
+            const { error } = await supabase.from('proposals').update({ status: 'excluida', is_archived: true }).eq('id', id).eq('user_id', user.id);
+            if (error) { setProposals(backup); Alert.alert('Erro', 'Não foi possível excluir.'); }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleApprove = async (id: string) => {
+    const backup = proposals;
+    setProposals(prev => prev.map(p => p.id === id ? { ...p, status: 'fechada' } : p));
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setProposals(backup); return; }
+    const { error } = await supabase.from('proposals').update({ status: 'fechada' }).eq('id', id).eq('user_id', user.id);
+    if (error) { setProposals(backup); Alert.alert('Erro', 'Não foi possível aprovar.'); }
+    else Alert.alert('🎉 Aprovada!', 'Proposta marcada como aprovada com sucesso.');
+  };
+
+  const openOptions = (item: any) => {
+    setSelectedProposal(item);
+    setOptionsModalVisible(true);
+    closeSwipeables();
+  };
+
+  const renderRightActions = (item: any) => (
+    <TouchableOpacity style={styles.swipeBtn} onPress={() => openOptions(item)} activeOpacity={0.8}>
+      <IconSettings />
+    </TouchableOpacity>
+  );
 
   const totalEnviadas = proposals.length;
   const totalAprovadas = proposals.filter(p => p.status === 'fechada').length;
@@ -191,7 +279,7 @@ export default function ProposalsTab() {
     }
 
     message += `*Valor Total:* R$ ${Number(item.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n\n`;
-    message += `🔗 Veja o detalhamento completo aqui: https://propoz-xdbm.vercel.app/view/${item.share_id || item.id}\n\n`;
+    message += `🔗 Veja o detalhamento completo aqui: https://propoz.kemersoncardozo.workers.dev/view/${item.share_id || item.id}\n\n`;
     message += `Fico à disposição para qualquer dúvida!\nAtt, *${nomeDono}*`;
 
     const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
@@ -199,200 +287,275 @@ export default function ProposalsTab() {
   };
 
   return (
-    <View style={styles.container}>
-      <StatusBar backgroundColor={C.blue} barStyle="light-content" translucent={false} />
+    <TouchableWithoutFeedback onPress={closeSwipeables}>
+      <GestureHandlerRootView style={styles.container}>
+        <StatusBar backgroundColor={C.blue} barStyle="light-content" translucent={false} />
 
-      <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <Text style={styles.headerTitle}>Minhas propostas</Text>
-          <TouchableOpacity style={styles.btnNew} onPress={handleNewProposal} activeOpacity={0.8}>
-            <Text style={styles.btnNewText}>+ Nova</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <ScrollView
-        style={styles.body}
-        contentContainerStyle={proposals.length === 0 ? styles.emptyBodyContent : styles.bodyContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.blue} />
-        }
-      >
-        {loading && !refreshing ? (
-          <ActivityIndicator color={C.blue} style={{ marginVertical: 30 }} />
-        ) : proposals.length === 0 ? (
-          <View style={styles.emptyStateContainer}>
-            <View style={styles.emptyIconCard}>
-              <IconDoc size={32} />
-            </View>
-            <Text style={styles.emptyStateTitle}>Nenhuma proposta ainda</Text>
-            <Text style={styles.emptyStateSub}>Crie sua primeira proposta em menos de 4 minutos e envie direto pelo WhatsApp.</Text>
-
-            <View style={styles.howItWorksCard}>
-              <Text style={styles.howItWorksTitle}>COMO FUNCIONA</Text>
-              <View style={styles.stepRow}>
-                <View style={styles.stepNum}><Text style={styles.stepNumTxt}>1</Text></View>
-                <Text style={styles.stepText}>Selecione os serviços do seu catálogo</Text>
-              </View>
-              <View style={styles.stepRow}>
-                <View style={styles.stepNum}><Text style={styles.stepNumTxt}>2</Text></View>
-                <Text style={styles.stepText}>Digite o nome do cliente</Text>
-              </View>
-              <View style={styles.stepRow}>
-                <View style={styles.stepNum}><Text style={styles.stepNumTxt}>3</Text></View>
-                <Text style={styles.stepText}>Envie pelo WhatsApp em 1 toque</Text>
-              </View>
-              <View style={styles.stepRow}>
-                <View style={styles.stepNum}><Text style={styles.stepNumTxt}>4</Text></View>
-                <Text style={styles.stepText}>Saiba quando o cliente abriu e feche mais</Text>
-              </View>
-            </View>
-
-            <TouchableOpacity style={styles.btnPrimaryLarge} onPress={handleNewProposal} activeOpacity={0.85}>
-              <IconPlus color={C.white} size={20} />
-              <Text style={styles.btnPrimaryLargeText}>Criar primeira proposta</Text>
+        <View style={styles.header}>
+          <View style={styles.headerRow}>
+            <Text style={styles.headerTitle}>Minhas propostas</Text>
+            <TouchableOpacity style={styles.btnNew} onPress={handleNewProposal} activeOpacity={0.8}>
+              <Text style={styles.btnNewText}>+ Nova</Text>
             </TouchableOpacity>
+          </View>
+        </View>
 
-            <View style={styles.freeAlert}>
-              <IconClock color={C.blue} />
-              <Text style={styles.freeAlertText}>Você tem <Text style={{ fontWeight: '700' }}>{userPlan === 'pro' ? 'propostas ilimitadas' : '5 propostas grátis'}</Text> este mês.</Text>
+        <ScrollView
+          style={styles.body}
+          contentContainerStyle={proposals.length === 0 ? styles.emptyBodyContent : styles.bodyContent}
+          showsVerticalScrollIndicator={false}
+          onScrollBeginDrag={closeSwipeables}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.blue} />
+          }
+        >
+          {loading && !refreshing ? (
+            <ActivityIndicator color={C.blue} style={{ marginVertical: 30 }} />
+          ) : proposals.length === 0 ? (
+            <View style={styles.emptyStateContainer}>
+              <View style={styles.emptyIconCard}>
+                <IconDoc size={32} />
+              </View>
+              <Text style={styles.emptyStateTitle}>Nenhuma proposta ainda</Text>
+              <Text style={styles.emptyStateSub}>Crie sua primeira proposta em menos de 4 minutos e envie direto pelo WhatsApp.</Text>
+
+              <View style={styles.howItWorksCard}>
+                <Text style={styles.howItWorksTitle}>COMO FUNCIONA</Text>
+                <View style={styles.stepRow}>
+                  <View style={styles.stepNum}><Text style={styles.stepNumTxt}>1</Text></View>
+                  <Text style={styles.stepText}>Selecione os serviços do seu catálogo</Text>
+                </View>
+                <View style={styles.stepRow}>
+                  <View style={styles.stepNum}><Text style={styles.stepNumTxt}>2</Text></View>
+                  <Text style={styles.stepText}>Digite o nome do cliente</Text>
+                </View>
+                <View style={styles.stepRow}>
+                  <View style={styles.stepNum}><Text style={styles.stepNumTxt}>3</Text></View>
+                  <Text style={styles.stepText}>Envie pelo WhatsApp em 1 toque</Text>
+                </View>
+                <View style={styles.stepRow}>
+                  <View style={styles.stepNum}><Text style={styles.stepNumTxt}>4</Text></View>
+                  <Text style={styles.stepText}>Saiba quando o cliente abriu e feche mais</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity style={styles.btnPrimaryLarge} onPress={handleNewProposal} activeOpacity={0.85}>
+                <IconPlus color={C.white} size={20} />
+                <Text style={styles.btnPrimaryLargeText}>Criar primeira proposta</Text>
+              </TouchableOpacity>
+
+              <View style={styles.freeAlert}>
+                <IconClock color={C.blue} />
+                <Text style={styles.freeAlertText}>Você tem <Text style={{ fontWeight: '700' }}>{userPlan === 'pro' ? 'propostas ilimitadas' : '5 propostas grátis'}</Text> este mês.</Text>
+              </View>
+            </View>
+          ) : (
+            <>
+              {proposals.map((item) => {
+                const tagStyle = getTagStyle(item.status);
+                const isExpanded = expandedId === item.id;
+                const isVisualizada = item.status === 'visualizada';
+                const isAprovada = item.status === 'fechada';
+
+                return (
+                  <View key={item.id} style={styles.swipeWrap}>
+                    <Swipeable
+                      ref={(ref) => { item.swipeableRef = ref; }}
+                      onSwipeableWillOpen={() => {
+                        if (openedRowRef.current && openedRowRef.current !== item.swipeableRef) {
+                          openedRowRef.current.close();
+                        }
+                        openedRowRef.current = item.swipeableRef;
+                        setActiveSwipeId(item.id);
+                        // Fecha expansão ao abrir swipe
+                        if (expandedId === item.id) {
+                          setExpandedId(null);
+                        }
+                      }}
+                      onSwipeableWillClose={() => {
+                        if (openedRowRef.current === item.swipeableRef) {
+                          setActiveSwipeId(null);
+                          openedRowRef.current = null;
+                        }
+                      }}
+                      renderRightActions={() => renderRightActions(item)}
+                    >
+                      <TouchableOpacity
+                        style={[styles.proposalCard, isExpanded && styles.proposalCardActive]}
+                        onPress={() => toggleExpand(item.id)}
+                        activeOpacity={0.9}
+                      >
+                        <View style={styles.proposalHead}>
+                          <View style={styles.proposalTopRow}>
+                            <Text style={styles.proposalClient} numberOfLines={1}>{item.client_name}</Text>
+                            <View style={[styles.tag, tagStyle.bg]}>
+                              <Text style={[styles.tagText, tagStyle.text]}>{getStatusLabel(item.status)}</Text>
+                            </View>
+                          </View>
+
+                          {isExpanded && (
+                            <View style={styles.expandedContent}>
+                              {isVisualizada && userPlan === 'pro' && (
+                                <View style={styles.followupAlert}>
+                                  <IconClock color={C.blue} />
+                                  <Text style={styles.followupAlertText}>Aberta recentemente — agir agora!</Text>
+                                </View>
+                              )}
+                              {isVisualizada && userPlan !== 'pro' && (
+                                <TouchableOpacity style={[styles.followupAlert, { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0', borderWidth: 1, padding: 8, borderRadius: 8 }]} activeOpacity={0.8} onPress={() => router.push('/upgrade' as any)}>
+                                  <IconLock color={C.muted} size={16} />
+                                  <Text style={[styles.followupAlertText, { color: C.muted }]}>Alerta de visualização exclusivo PRO</Text>
+                                </TouchableOpacity>
+                              )}
+
+                              <View style={styles.detailsRow}>
+                                <Text style={styles.detailsText}>💳 {item.payment_method || 'Pix / À vista'}</Text>
+                                <Text style={styles.detailsText}>📅 Validade: {item.validity || '7 dias'}</Text>
+                              </View>
+
+                              <View style={styles.itemsList}>
+                                <Text style={styles.itemsTitle}>ITENS COBRADOS:</Text>
+                                {item.items?.map((sub: any, i: number) => (
+                                  <View key={i} style={styles.itemLine}>
+                                    <Text style={styles.itemLineName}>{sub.qty}x {sub.name}</Text>
+                                    <Text style={styles.itemLinePrice}>R$ {(sub.price * sub.qty).toLocaleString('pt-BR')}</Text>
+                                  </View>
+                                ))}
+                              </View>
+
+                              {userPlan === 'pro' ? (
+                                <View style={styles.followupBox}>
+                                  <Text style={styles.followupBoxTitle}>Sugestão de mensagem:</Text>
+                                  <Text style={styles.followupBoxMsg}>"Oi, vi que você recebeu minha proposta. Posso tirar alguma dúvida sobre os serviços?"</Text>
+                                </View>
+                              ) : (
+                                <TouchableOpacity style={[styles.followupBox, { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' }]} activeOpacity={0.9} onPress={() => router.push('/upgrade' as any)}>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                    <IconLock color={C.muted} size={14} />
+                                    <Text style={[styles.followupBoxTitle, { color: C.muted, marginBottom: 0 }]}>SUGESTÃO INTELIGENTE</Text>
+                                  </View>
+                                  <Text style={[styles.followupBoxMsg, { color: C.muted }]}>Assine o plano PRO para ter roteiros de mensagens exatos para fechamento.</Text>
+                                </TouchableOpacity>
+                              )}
+
+                              <View style={styles.actionRow}>
+                                <TouchableOpacity
+                                  style={styles.btnSmGreen}
+                                  activeOpacity={0.8}
+                                  onPress={() => sendWhatsApp(item)}
+                                >
+                                  <Text style={styles.btnSmGreenText}>Enviar no WhatsApp</Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          )}
+
+                          {!isExpanded && (
+                            <View style={styles.proposalBottomRow}>
+                              <Text style={styles.proposalMeta} numberOfLines={1}>
+                                <Text style={styles.totalValueGreenList}>
+                                  R$ {Number(item.value).toLocaleString('pt-BR')}
+                                </Text>
+                                <Text style={{ color: C.subtle }}> · {item.service_type ?? 'Serviço'}</Text>
+                              </Text>
+                              <Text style={styles.proposalStatusSub}>
+                                {isAprovada ? <Text style={{ color: C.greenText, fontWeight: '600' }}>Fechado!</Text> : 'há pouco'}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+
+                        {isExpanded && (
+                          <View style={styles.proposalFoot}>
+                            <Text style={styles.footTextMain}>
+                              <Text style={styles.totalLabel}>Total: </Text>
+                              <Text style={styles.totalValueGreen}>
+                                R$ {Number(item.value).toLocaleString('pt-BR')}
+                              </Text>
+                            </Text>
+                            <Text style={styles.footTextSub}>vence em 6 dias</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    </Swipeable>
+                  </View>
+                );
+              })}
+
+            </>
+          )}
+        </ScrollView>
+
+        {/* ── RODAPÉ FIXO (INDICADORES) ── */}
+        <View style={styles.metricsFooter}>
+          <View style={styles.metricFooterItem}>
+            <Text style={styles.metricFooterVal}>{totalEnviadas}</Text>
+            <Text style={styles.metricFooterLbl}>enviadas</Text>
+          </View>
+          <View style={styles.metricFooterDivider} />
+          <View style={styles.metricFooterItem}>
+            <Text style={[styles.metricFooterVal, { color: C.blue }]}>{totalVisualizadas}</Text>
+            <Text style={styles.metricFooterLbl}>visualizadas</Text>
+          </View>
+          <View style={styles.metricFooterDivider} />
+          <View style={styles.metricFooterItem}>
+            <Text style={[styles.metricFooterVal, { color: C.greenText }]}>{totalAprovadas}</Text>
+            <Text style={styles.metricFooterLbl}>aprovadas</Text>
+          </View>
+        </View>
+
+        <BottomNav active="proposals" />
+
+        {/* ── MODAL DE OPÇÕES (BOTTOM SHEET) ── */}
+        <Modal
+          visible={optionsModalVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setOptionsModalVisible(false)}
+        >
+          <View style={styles.bottomSheetOverlay}>
+            <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setOptionsModalVisible(false)} />
+            <View style={[styles.bottomSheetContainer, { minHeight: 0, paddingBottom: Platform.OS === 'ios' ? 40 : 24, padding: 16 }]}>
+              <View style={{ marginBottom: 16, alignItems: 'center' }}>
+                <View style={{ width: 40, height: 4, backgroundColor: C.border, borderRadius: 2 }} />
+              </View>
+
+              <TouchableOpacity style={styles.optionRow} onPress={() => { setOptionsModalVisible(false); if (selectedProposal) handleApprove(selectedProposal.id); }}>
+                <Text style={[styles.optionText, { color: C.greenText }]}>Marcar aprovada</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.optionRow} onPress={() => { setOptionsModalVisible(false); if (selectedProposal) router.push(`/edit-proposal/${selectedProposal.id}` as any); }}>
+                <Text style={styles.optionText}>Editar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.optionRow} onPress={() => {
+                setOptionsModalVisible(false);
+                if (selectedProposal) {
+                  const sId = selectedProposal.share_id || selectedProposal.id;
+                  const total = Number(selectedProposal.total_value ?? selectedProposal.value) || 0;
+                  Share.share({
+                    message: `Olá! Segue a proposta de Node Tech para ${selectedProposal.client_name}.\n*Total: R$ ${total.toLocaleString('pt-BR')}*\n\nDetalhes aqui: https://propoz.kemersoncardozo.workers.dev/view/${sId}`,
+                  });
+                }
+              }}>
+                <Text style={styles.optionText}>Compartilhar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.optionRow} onPress={() => { setOptionsModalVisible(false); if (selectedProposal) handleArchive(selectedProposal.id); }}>
+                <Text style={styles.optionText}>Arquivar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.optionRow} onPress={() => { setOptionsModalVisible(false); if (selectedProposal) handleDelete(selectedProposal.id); }}>
+                <Text style={[styles.optionText, { color: C.redText }]}>Excluir</Text>
+              </TouchableOpacity>
+
+              <View style={{ height: 1, backgroundColor: C.border, marginVertical: 8 }} />
+
+              <TouchableOpacity style={styles.optionRow} onPress={() => setOptionsModalVisible(false)}>
+                <Text style={[styles.optionText, { color: '#94A3B8', textAlign: 'center', width: '100%' }]}>Cancelar</Text>
+              </TouchableOpacity>
             </View>
           </View>
-        ) : (
-          <>
-            {proposals.map((item) => {
-              const tagStyle = getTagStyle(item.status);
-              const isExpanded = expandedId === item.id;
-              const isVisualizada = item.status === 'visualizada';
-              const isAprovada = item.status === 'fechada';
+        </Modal>
 
-              return (
-                <TouchableOpacity
-                  key={item.id}
-                  style={[styles.proposalCard, isExpanded && styles.proposalCardActive]}
-                  onPress={() => toggleExpand(item.id)}
-                  activeOpacity={0.9}
-                >
-                  <View style={styles.proposalHead}>
-                    <View style={styles.proposalTopRow}>
-                      <Text style={styles.proposalClient} numberOfLines={1}>{item.client_name}</Text>
-                      <View style={[styles.tag, tagStyle.bg]}>
-                        <Text style={[styles.tagText, tagStyle.text]}>{getStatusLabel(item.status)}</Text>
-                      </View>
-                    </View>
-
-                    {isExpanded && (
-                      <View style={styles.expandedContent}>
-                        {isVisualizada && userPlan === 'pro' && (
-                          <View style={styles.followupAlert}>
-                            <IconClock color={C.blue} />
-                            <Text style={styles.followupAlertText}>Aberta recentemente — agir agora!</Text>
-                          </View>
-                        )}
-                        {isVisualizada && userPlan !== 'pro' && (
-                          <TouchableOpacity style={[styles.followupAlert, { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0', borderWidth: 1, padding: 8, borderRadius: 8 }]} activeOpacity={0.8} onPress={() => router.push('/upgrade' as any)}>
-                            <IconLock color={C.muted} size={16} />
-                            <Text style={[styles.followupAlertText, { color: C.muted }]}>Alerta de visualização exclusivo PRO</Text>
-                          </TouchableOpacity>
-                        )}
-
-                        <View style={styles.detailsRow}>
-                          <Text style={styles.detailsText}>💳 {item.payment_method || 'Pix / À vista'}</Text>
-                          <Text style={styles.detailsText}>📅 Validade: {item.validity || '7 dias'}</Text>
-                        </View>
-
-                        <View style={styles.itemsList}>
-                          <Text style={styles.itemsTitle}>ITENS COBRADOS:</Text>
-                          {item.items?.map((sub: any, i: number) => (
-                            <View key={i} style={styles.itemLine}>
-                              <Text style={styles.itemLineName}>{sub.qty}x {sub.name}</Text>
-                              <Text style={styles.itemLinePrice}>R$ {(sub.price * sub.qty).toLocaleString('pt-BR')}</Text>
-                            </View>
-                          ))}
-                        </View>
-
-                        {userPlan === 'pro' ? (
-                          <View style={styles.followupBox}>
-                            <Text style={styles.followupBoxTitle}>Sugestão de mensagem:</Text>
-                            <Text style={styles.followupBoxMsg}>"Oi, vi que você recebeu minha proposta. Posso tirar alguma dúvida sobre os serviços?"</Text>
-                          </View>
-                        ) : (
-                          <TouchableOpacity style={[styles.followupBox, { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' }]} activeOpacity={0.9} onPress={() => router.push('/upgrade' as any)}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                              <IconLock color={C.muted} size={14} />
-                              <Text style={[styles.followupBoxTitle, { color: C.muted, marginBottom: 0 }]}>SUGESTÃO INTELIGENTE</Text>
-                            </View>
-                            <Text style={[styles.followupBoxMsg, { color: C.muted }]}>Assine o plano PRO para ter roteiros de mensagens exatos para fechamento.</Text>
-                          </TouchableOpacity>
-                        )}
-
-                        <View style={styles.actionRow}>
-                          <TouchableOpacity
-                            style={styles.btnSmGreen}
-                            activeOpacity={0.8}
-                            onPress={() => sendWhatsApp(item)}
-                          >
-                            <Text style={styles.btnSmGreenText}>Enviar no WhatsApp</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    )}
-
-                    {!isExpanded && (
-                      <View style={styles.proposalBottomRow}>
-                        <Text style={styles.proposalMeta} numberOfLines={1}>
-                          <Text style={styles.totalValueGreenList}>
-                            R$ {Number(item.value).toLocaleString('pt-BR')}
-                          </Text>
-                          <Text style={{ color: C.subtle }}> · {item.service_type ?? 'Serviço'}</Text>
-                        </Text>
-                        <Text style={styles.proposalStatusSub}>
-                          {isAprovada ? <Text style={{ color: C.greenText, fontWeight: '600' }}>Fechado!</Text> : 'há pouco'}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {isExpanded && (
-                    <View style={styles.proposalFoot}>
-                      <Text style={styles.footTextMain}>
-                        <Text style={styles.totalLabel}>Total: </Text>
-                        <Text style={styles.totalValueGreen}>
-                          R$ {Number(item.value).toLocaleString('pt-BR')}
-                        </Text>
-                      </Text>
-                      <Text style={styles.footTextSub}>vence em 6 dias</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-
-          </>
-        )}
-      </ScrollView>
-
-      {/* ── RODAPÉ FIXO (INDICADORES) ── */}
-      <View style={styles.metricsFooter}>
-        <View style={styles.metricFooterItem}>
-          <Text style={styles.metricFooterVal}>{totalEnviadas}</Text>
-          <Text style={styles.metricFooterLbl}>enviadas</Text>
-        </View>
-        <View style={styles.metricFooterDivider} />
-        <View style={styles.metricFooterItem}>
-          <Text style={[styles.metricFooterVal, { color: C.blue }]}>{totalVisualizadas}</Text>
-          <Text style={styles.metricFooterLbl}>visualizadas</Text>
-        </View>
-        <View style={styles.metricFooterDivider} />
-        <View style={styles.metricFooterItem}>
-          <Text style={[styles.metricFooterVal, { color: C.greenText }]}>{totalAprovadas}</Text>
-          <Text style={styles.metricFooterLbl}>aprovadas</Text>
-        </View>
-      </View>
-
-      <BottomNav active="proposals" />
-    </View>
+      </GestureHandlerRootView>
+    </TouchableWithoutFeedback>
   );
 }
 
@@ -420,7 +583,12 @@ const styles = StyleSheet.create({
   btnPrimaryLargeText: { color: C.white, fontSize: 16, fontWeight: '700', marginLeft: 10 },
   freeAlert: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 24, backgroundColor: C.blueBg, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12, width: '100%' },
   freeAlertText: { fontSize: 12, color: C.blue, fontWeight: '500' },
-  proposalCard: { borderWidth: 1, borderColor: C.border, borderRadius: 16, backgroundColor: C.white, marginBottom: 12, overflow: 'hidden' },
+
+  // Swipe
+  swipeWrap: { marginBottom: 12, overflow: 'hidden', borderRadius: 16 },
+  swipeBtn: { backgroundColor: C.blue, width: 65, height: '100%', borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginLeft: 10 },
+
+  proposalCard: { borderWidth: 1, borderColor: C.border, borderRadius: 16, backgroundColor: C.white, overflow: 'hidden' },
   proposalCardActive: { borderWidth: 2, borderColor: C.blue, elevation: 4 },
   proposalHead: { paddingVertical: 14, paddingHorizontal: 16 },
   proposalTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
@@ -441,8 +609,6 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', gap: 8, marginBottom: 4 },
   btnSmGreen: { flex: 1, backgroundColor: C.greenWa, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   btnSmGreenText: { color: C.white, fontSize: 13, fontWeight: '700' },
-  btnSmOutline: { flex: 1, backgroundColor: C.greenBg, borderWidth: 1, borderColor: C.greenBdr, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
-  btnSmOutlineText: { color: C.greenText, fontSize: 13, fontWeight: '700' },
   proposalBottomRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   proposalMeta: { fontSize: 14 },
   totalValueGreenList: { color: C.greenText, fontWeight: '700' },
@@ -459,6 +625,7 @@ const styles = StyleSheet.create({
   tagGray: { backgroundColor: C.bgLight }, tagTextGray: { color: C.muted },
   tagOrange: { backgroundColor: C.orangeBg }, tagTextOrange: { color: C.orange },
   tagRed: { backgroundColor: C.bgLight }, tagTextRed: { color: C.muted },
+
   metricsFooter: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -477,4 +644,25 @@ const styles = StyleSheet.create({
   metricFooterVal: { fontSize: 22, fontWeight: '700', color: C.ink },
   metricFooterLbl: { fontSize: 10, color: C.muted, marginTop: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
   metricFooterDivider: { width: 1, backgroundColor: C.border, marginHorizontal: 5 },
+
+  // Modal de opções
+  bottomSheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  bottomSheetContainer: {
+    backgroundColor: C.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 16,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+  },
+  sheetClientName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+  },
+  optionRow: { paddingVertical: 14, paddingHorizontal: 12 },
+  optionText: { fontSize: 16, fontWeight: '600', color: C.ink },
 });

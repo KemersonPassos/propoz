@@ -1,8 +1,10 @@
 import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Platform,
   ScrollView,
   StatusBar,
@@ -29,7 +31,7 @@ const IconBack = () => (
 );
 
 const IconCamera = () => (
-  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="#93C5FD" strokeWidth={2}>
+  <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="#93C5FD" strokeWidth={2}>
     <Rect x={3} y={3} width={18} height={18} rx={2}/>
     <Circle cx={8.5} cy={8.5} r={1.5}/>
     <Polyline points="21,15 16,10 5,21"/>
@@ -43,6 +45,13 @@ const IconCheckCircle = () => (
   </Svg>
 );
 
+const IconEdit = () => (
+  <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.5}>
+    <Path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+    <Path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+  </Svg>
+);
+
 
 
 // ─────────────────────────────────────────
@@ -51,10 +60,13 @@ const IconCheckCircle = () => (
 export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [companyName, setCompanyName] = useState('');
   const [ownerName, setOwnerName] = useState('');
   const [phone, setPhone] = useState('');
   const [city, setCity] = useState('');
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProfile();
@@ -64,6 +76,8 @@ export default function ProfileScreen() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+
+      setUserId(user.id);
 
       const { data, error } = await supabase
         .from('profiles')
@@ -76,11 +90,97 @@ export default function ProfileScreen() {
         setOwnerName(data.owner_name || '');
         setPhone(data.phone || '');
         setCity(data.city || '');
+        setLogoUrl(data.logo_url || null);
       }
     } catch (error) {
       console.log('Erro ao carregar perfil:', error);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handlePickLogo() {
+    try {
+      // Solicita permissão
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permissão necessária', 'Precisamos de acesso à sua galeria para adicionar o logo.');
+        return;
+      }
+
+      // Abre a galeria
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+        base64: true,
+      });
+
+      if (result.canceled || !result.assets[0]) return;
+
+      const asset = result.assets[0];
+      if (!asset.base64) {
+        Alert.alert('Erro', 'Não foi possível processar a imagem.');
+        return;
+      }
+
+      if (!userId) return;
+
+      setUploadingLogo(true);
+
+      // Converte base64 → ArrayBuffer para o upload
+      const base64 = asset.base64;
+      const byteCharacters = atob(base64);
+      const byteArray = new Uint8Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteArray[i] = byteCharacters.charCodeAt(i);
+      }
+
+      const fileName = `logo_${userId}_${Date.now()}.jpg`;
+
+      // Upload para o Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('logos')
+        .upload(fileName, byteArray.buffer, {
+          contentType: 'image/jpeg',
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.log('Erro upload:', uploadError);
+        Alert.alert('Erro no upload', uploadError.message);
+        return;
+      }
+
+      // Pega a URL pública
+      const { data: publicUrlData } = supabase.storage
+        .from('logos')
+        .getPublicUrl(fileName);
+
+      const publicUrl = publicUrlData.publicUrl;
+
+      // Salva no perfil
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .upsert({
+          id: userId,
+          logo_url: publicUrl,
+          updated_at: new Date().toISOString(),
+        });
+
+      if (updateError) {
+        Alert.alert('Erro', updateError.message);
+        return;
+      }
+
+      setLogoUrl(publicUrl);
+      Alert.alert('✅ Logo atualizado!', 'O logo da sua empresa foi salvo com sucesso.');
+    } catch (error: any) {
+      console.log('Erro ao fazer upload do logo:', error);
+      Alert.alert('Erro', 'Não foi possível enviar o logo. Tente novamente.');
+    } finally {
+      setUploadingLogo(false);
     }
   }
 
@@ -133,10 +233,29 @@ export default function ProfileScreen() {
           <ActivityIndicator color={C.blue} style={{ marginTop: 40 }} />
         ) : (
           <>
-            {/* Logo Upload Placeholder */}
-            <TouchableOpacity style={s.avatarUpload} activeOpacity={0.7} onPress={() => Alert.alert("Em Breve", "O upload de imagem estará disponível na próxima atualização.")}>
-              <IconCamera />
-              <Text style={s.avatarText}>Adicionar logo</Text>
+            {/* Logo Upload */}
+            <TouchableOpacity
+              style={s.avatarUpload}
+              activeOpacity={0.8}
+              onPress={handlePickLogo}
+              disabled={uploadingLogo}
+            >
+              {uploadingLogo ? (
+                <ActivityIndicator color="#93C5FD" />
+              ) : logoUrl ? (
+                <>
+                  <Image source={{ uri: logoUrl }} style={s.logoImage} resizeMode="contain" />
+                  {/* Botão editar sobreposto */}
+                  <View style={s.editBadge}>
+                    <IconEdit />
+                  </View>
+                </>
+              ) : (
+                <>
+                  <IconCamera />
+                  <Text style={s.avatarText}>Adicionar logo</Text>
+                </>
+              )}
             </TouchableOpacity>
 
             {/* Campos do Formulário */}
@@ -240,11 +359,29 @@ const s = StyleSheet.create({
   scrollContent: { padding: 20, paddingBottom: 40 },
 
   avatarUpload: { 
-    width: 100, height: 100, borderRadius: 20, 
+    width: 110, height: 110, borderRadius: 20, 
     backgroundColor: C.blueBg, borderStyle: 'dashed', 
     borderWidth: 2, borderColor: '#93C5FD', 
     alignSelf: 'center', alignItems: 'center', 
-    justifyContent: 'center', marginBottom: 24 
+    justifyContent: 'center', marginBottom: 24,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  logoImage: {
+    width: 110,
+    height: 110,
+    borderRadius: 18,
+  },
+  editBadge: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    backgroundColor: C.blue,
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   avatarText: { fontSize: 11, color: '#93C5FD', fontWeight: '600', marginTop: 4 },
 

@@ -469,7 +469,7 @@ export default function NewProposal() {
               <TouchableOpacity
                 style={[s.btnPrimary, { width: '100%', marginBottom: 12, alignItems: 'center', paddingVertical: 14 }]}
                 onPress={async () => {
-                  const shareUrl = `https://propoz-xdbm.vercel.app/view/${savedProposalData?.share_id || savedProposalData?.id}`;
+                  const shareUrl = `https://propoz.kemersoncardozo.workers.dev/view/${savedProposalData?.share_id || savedProposalData?.id}`;
                   await Share.share({
                     message: `Olá! Segue a proposta de Node Tech para ${savedProposalData?.client_name}.\n*Total: R$ ${Number(savedProposalData?.value).toLocaleString('pt-BR')}*\n\nDetalhes aqui: ${shareUrl}`,
                   });
