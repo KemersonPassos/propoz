@@ -207,9 +207,38 @@ export default function ViewProposal() {
   };
 
   const handleExportPDFClient = async () => {
+    const html = generateProposalPdfHtml(proposal, vendor);
+
+    // Web (Cloudflare Pages): expo-print ignora o {html} e imprime a página atual.
+    // Abrimos uma nova aba com o HTML gerado para ter controle total sobre o PDF.
+    if (Platform.OS === 'web') {
+      try {
+        const win = (window as any).open('', '_blank', 'width=900,height=700');
+        if (!win) {
+          Alert.alert('Bloqueado', 'Permita pop-ups para este site e tente novamente.');
+          return;
+        }
+        win.document.open();
+        win.document.write(html);
+        win.document.close();
+        // Aguarda o carregamento e chama print automaticamente
+        win.onload = () => {
+          win.focus();
+          win.print();
+        };
+        // Fallback caso onload não dispare
+        setTimeout(() => {
+          try { win.focus(); win.print(); } catch (_) {}
+        }, 800);
+      } catch (e: any) {
+        Alert.alert('Erro', 'Não foi possível abrir a janela de impressão.');
+      }
+      return;
+    }
+
+    // Nativo (app mobile)
     try {
       setPrinting(true);
-      const html = generateProposalPdfHtml(proposal, vendor);
       await Print.printAsync({ html });
     } catch (e: any) {
       Alert.alert('Erro', 'Falha ao preparar o PDF. ' + e.message);
