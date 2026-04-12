@@ -214,77 +214,48 @@ export default function ViewProposal() {
       try {
         setPrinting(true);
 
-        // 1. Carrega html2pdf.js dinamicamente
-        await new Promise<void>((resolve, reject) => {
-          if ((window as any).html2pdf) { resolve(); return; }
-          const script = document.createElement('script');
-          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-          script.onload = () => resolve();
-          script.onerror = () => reject(new Error('Falha ao carregar html2pdf'));
-          document.head.appendChild(script);
-        });
-
-        // 2. Extrai o CSS e o conteúdo do <body> SEPARADAMENTE
-        //    (container.innerHTML = fullHtmlDoc descarta <style> → tudo branco)
         const cssMatch = htmlContent.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
         const css = cssMatch ? cssMatch[1] : '';
         const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
         const bodyContent = bodyMatch ? bodyMatch[1] : htmlContent;
 
-        // 3. Cria overlay VISÍVEL na tela
-        //    (html2canvas não consegue capturar elementos fora do viewport / left:-9999px)
-        const overlay = document.createElement('div');
-        overlay.style.cssText = [
-          'position:fixed',
-          'top:0',
-          'left:0',
-          'width:794px',
-          'background:#F8FAFC',
-          'z-index:99999',
-          'pointer-events:none',
-          'overflow:visible',
-        ].join(';');
-
-        // Injeta o <style> extraído
+        const printContainer = document.createElement('div');
+        printContainer.id = 'propoz-print-container';
+        printContainer.innerHTML = bodyContent;
+        
         const styleEl = document.createElement('style');
+        styleEl.id = 'propoz-print-style';
         styleEl.textContent = css;
-        overlay.appendChild(styleEl);
 
-        // Injeta o conteúdo do body
-        const contentDiv = document.createElement('div');
-        contentDiv.innerHTML = bodyContent;
-        overlay.appendChild(contentDiv);
+        // Esconde a interface principal do React para que só a proposta seja impressa
+        const rootSelectors = document.querySelectorAll('#root, #__next');
+        rootSelectors.forEach((el) => { (el as HTMLElement).style.display = 'none'; });
 
-        document.body.appendChild(overlay);
+        document.head.appendChild(styleEl);
+        document.body.appendChild(printContainer);
+        document.body.style.backgroundColor = '#F8FAFC';
 
-        // Pequeno delay para garantir que a renderização foi concluída
-        await new Promise(r => setTimeout(r, 400));
+        // Timeout curto para o DOM e estilos atualizarem
+        setTimeout(() => {
+          const defaultTitle = document.title;
+          const clientName = proposal?.client_name || 'proposta';
+          document.title = `Proposta - ${clientName}`;
+          
+          window.print();
+          
+          // Restaura a página principal assim que o print (dialog) terminar
+          document.head.removeChild(styleEl);
+          document.body.removeChild(printContainer);
+          document.body.style.backgroundColor = '';
+          rootSelectors.forEach((el) => { (el as HTMLElement).style.display = ''; });
+          document.title = defaultTitle;
+          
+          setPrinting(false);
+        }, 150);
 
-        const clientName = (proposal?.client_name || 'proposta').replace(/\s+/g, '_');
-
-        await (window as any).html2pdf()
-          .set({
-            margin: 0,
-            filename: `proposta_${clientName}.pdf`,
-            image: { type: 'jpeg', quality: 0.97 },
-            html2canvas: {
-              scale: 2,
-              useCORS: true,
-              allowTaint: true,
-              backgroundColor: '#F8FAFC',
-              logging: false,
-            },
-            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-            pagebreak: { mode: 'avoid-all' },
-          })
-          .from(overlay)
-          .save();
-
-        document.body.removeChild(overlay);
       } catch (e: any) {
         console.log('PDF error:', e);
         Alert.alert('Erro', 'Não foi possível gerar o PDF. Tente novamente.');
-      } finally {
         setPrinting(false);
       }
       return;
