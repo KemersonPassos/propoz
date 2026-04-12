@@ -209,34 +209,60 @@ export default function ViewProposal() {
   const handleExportPDFClient = async () => {
     const html = generateProposalPdfHtml(proposal, vendor);
 
-    // Web (Cloudflare Pages): expo-print ignora o {html} e imprime a página atual.
-    // Abrimos uma nova aba com o HTML gerado para ter controle total sobre o PDF.
+    // ── WEB: gera PDF real via html2pdf.js (sem popup, sem window.print) ──
     if (Platform.OS === 'web') {
       try {
-        const win = (window as any).open('', '_blank', 'width=900,height=700');
-        if (!win) {
-          Alert.alert('Bloqueado', 'Permita pop-ups para este site e tente novamente.');
-          return;
-        }
-        win.document.open();
-        win.document.write(html);
-        win.document.close();
-        // Aguarda o carregamento e chama print automaticamente
-        win.onload = () => {
-          win.focus();
-          win.print();
-        };
-        // Fallback caso onload não dispare
-        setTimeout(() => {
-          try { win.focus(); win.print(); } catch (_) {}
-        }, 800);
+        setPrinting(true);
+
+        // Injeta html2pdf.js dinamicamente se ainda não estiver carregado
+        await new Promise<void>((resolve, reject) => {
+          if ((window as any).html2pdf) { resolve(); return; }
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error('Falha ao carregar html2pdf.js'));
+          document.head.appendChild(script);
+        });
+
+        // Cria container oculto com o HTML da proposta
+        const container = document.createElement('div');
+        container.style.position = 'fixed';
+        container.style.left = '-9999px';
+        container.style.top = '0';
+        container.style.width = '210mm';
+        container.innerHTML = html;
+        document.body.appendChild(container);
+
+        const clientName = proposal?.client_name?.replace(/\s+/g, '_') || 'proposta';
+        const fileName = `proposta_${clientName}.pdf`;
+
+        await (window as any).html2pdf()
+          .set({
+            margin: 0,
+            filename: fileName,
+            image: { type: 'jpeg', quality: 0.98 },
+            html2canvas: {
+              scale: 2,
+              useCORS: true,
+              allowTaint: true,
+              backgroundColor: '#F8FAFC',
+            },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          })
+          .from(container)
+          .save();
+
+        document.body.removeChild(container);
       } catch (e: any) {
-        Alert.alert('Erro', 'Não foi possível abrir a janela de impressão.');
+        Alert.alert('Erro', 'Não foi possível gerar o PDF. Tente novamente.');
+        console.log('PDF error:', e);
+      } finally {
+        setPrinting(false);
       }
       return;
     }
 
-    // Nativo (app mobile)
+    // ── NATIVO (app mobile): usa expo-print igual ao fluxo do app ──
     try {
       setPrinting(true);
       await Print.printAsync({ html });
