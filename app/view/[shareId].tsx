@@ -207,60 +207,89 @@ export default function ViewProposal() {
   };
 
   const handleExportPDFClient = async () => {
-    const html = generateProposalPdfHtml(proposal, vendor);
+    const htmlContent = generateProposalPdfHtml(proposal, vendor);
 
-    // ── WEB: gera PDF real via html2pdf.js (sem popup, sem window.print) ──
+    // ── WEB: gera PDF real via html2pdf.js ──
     if (Platform.OS === 'web') {
       try {
         setPrinting(true);
 
-        // Injeta html2pdf.js dinamicamente se ainda não estiver carregado
+        // 1. Carrega html2pdf.js dinamicamente
         await new Promise<void>((resolve, reject) => {
           if ((window as any).html2pdf) { resolve(); return; }
           const script = document.createElement('script');
           script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
           script.onload = () => resolve();
-          script.onerror = () => reject(new Error('Falha ao carregar html2pdf.js'));
+          script.onerror = () => reject(new Error('Falha ao carregar html2pdf'));
           document.head.appendChild(script);
         });
 
-        // Cria container oculto com o HTML da proposta
-        const container = document.createElement('div');
-        container.style.position = 'fixed';
-        container.style.left = '-9999px';
-        container.style.top = '0';
-        container.style.width = '210mm';
-        container.innerHTML = html;
-        document.body.appendChild(container);
+        // 2. Extrai o CSS e o conteúdo do <body> SEPARADAMENTE
+        //    (container.innerHTML = fullHtmlDoc descarta <style> → tudo branco)
+        const cssMatch = htmlContent.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+        const css = cssMatch ? cssMatch[1] : '';
+        const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+        const bodyContent = bodyMatch ? bodyMatch[1] : htmlContent;
 
-        const clientName = proposal?.client_name?.replace(/\s+/g, '_') || 'proposta';
-        const fileName = `proposta_${clientName}.pdf`;
+        // 3. Cria overlay VISÍVEL na tela
+        //    (html2canvas não consegue capturar elementos fora do viewport / left:-9999px)
+        const overlay = document.createElement('div');
+        overlay.style.cssText = [
+          'position:fixed',
+          'top:0',
+          'left:0',
+          'width:794px',
+          'background:#F8FAFC',
+          'z-index:99999',
+          'pointer-events:none',
+          'overflow:visible',
+        ].join(';');
+
+        // Injeta o <style> extraído
+        const styleEl = document.createElement('style');
+        styleEl.textContent = css;
+        overlay.appendChild(styleEl);
+
+        // Injeta o conteúdo do body
+        const contentDiv = document.createElement('div');
+        contentDiv.innerHTML = bodyContent;
+        overlay.appendChild(contentDiv);
+
+        document.body.appendChild(overlay);
+
+        // Pequeno delay para garantir que a renderização foi concluída
+        await new Promise(r => setTimeout(r, 400));
+
+        const clientName = (proposal?.client_name || 'proposta').replace(/\s+/g, '_');
 
         await (window as any).html2pdf()
           .set({
             margin: 0,
-            filename: fileName,
-            image: { type: 'jpeg', quality: 0.98 },
+            filename: `proposta_${clientName}.pdf`,
+            image: { type: 'jpeg', quality: 0.97 },
             html2canvas: {
               scale: 2,
               useCORS: true,
               allowTaint: true,
               backgroundColor: '#F8FAFC',
+              logging: false,
             },
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+            pagebreak: { mode: 'avoid-all' },
           })
-          .from(container)
+          .from(overlay)
           .save();
 
-        document.body.removeChild(container);
+        document.body.removeChild(overlay);
       } catch (e: any) {
-        Alert.alert('Erro', 'Não foi possível gerar o PDF. Tente novamente.');
         console.log('PDF error:', e);
+        Alert.alert('Erro', 'Não foi possível gerar o PDF. Tente novamente.');
       } finally {
         setPrinting(false);
       }
       return;
     }
+
 
     // ── NATIVO (app mobile): usa expo-print igual ao fluxo do app ──
     try {
