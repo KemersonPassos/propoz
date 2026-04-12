@@ -475,7 +475,7 @@ export default function NewProposal() {
                   });
                 }}
               >
-                <Text style={s.btnPrimaryTxt}>Compartilhar link da Vercel</Text>
+                <Text style={s.btnPrimaryTxt}>Compartilhar Link</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
