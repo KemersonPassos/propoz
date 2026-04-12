@@ -279,7 +279,7 @@ export default function ProposalsTab() {
     }
 
     message += `*Valor Total:* R$ ${Number(item.value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n\n`;
-    message += `🔗 Veja o detalhamento completo aqui: https://propoz.kemersoncardozo.workers.dev/view/${item.share_id || item.id}\n\n`;
+    message += `🔗 Veja o detalhamento completo aqui: https://propoz.pages.dev/view/${item.share_id || item.id}\n\n`;
     message += `Fico à disposição para qualquer dúvida!\nAtt, *${nomeDono}*`;
 
     const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
@@ -532,7 +532,7 @@ export default function ProposalsTab() {
                   const sId = selectedProposal.share_id || selectedProposal.id;
                   const total = Number(selectedProposal.total_value ?? selectedProposal.value) || 0;
                   Share.share({
-                    message: `Olá! Segue a proposta de Node Tech para ${selectedProposal.client_name}.\n*Total: R$ ${total.toLocaleString('pt-BR')}*\n\nDetalhes aqui: https://propoz.kemersoncardozo.workers.dev/view/${sId}`,
+                    message: `Olá! Segue a proposta de Node Tech para ${selectedProposal.client_name}.\n*Total: R$ ${total.toLocaleString('pt-BR')}*\n\nDetalhes aqui: https://propoz.pages.dev/view/${sId}`,
                   });
                 }
               }}>
