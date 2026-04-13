@@ -1,0 +1,5 @@
+- [x] Implementar lógica real de follow-up em `app/proposals.tsx`
+- [x] Substituir mensagens estáticas por mensagens dinâmicas por estágio
+- [x] Ajustar envio de WhatsApp para usar mensagem contextual de follow-up
+- [x] Revisar bloqueio Pro/Free mantendo comportamento atual
+- [ ] Validar TypeScript/lint

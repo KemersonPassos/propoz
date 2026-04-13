@@ -23,13 +23,12 @@ import Svg, {
   Circle,
   Line,
   Path,
-  Polygon,
   Polyline,
   Rect
 } from 'react-native-svg';
-import { supabase } from '../lib/supabase';
-import { C } from '../constants/colors';
 import BottomNav from '../components/BottomNav';
+import { C } from '../constants/colors';
+import { supabase } from '../lib/supabase';
 
 // Habilita animações no Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -269,10 +268,74 @@ export default function ProposalsTab() {
     return { bg: styles.tagGray, text: styles.tagTextGray };
   }
 
+  const getFollowUpStage = (item: any) => {
+    const baseDate = item?.updated_at || item?.created_at;
+    if (!baseDate) return { key: 'now', hoursSince: 0 };
+
+    const diffMs = Date.now() - new Date(baseDate).getTime();
+    const hoursSince = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
+
+    if (hoursSince < 6) return { key: 'now', hoursSince };
+    if (hoursSince < 24) return { key: 'today', hoursSince };
+    if (hoursSince < 72) return { key: 'soon', hoursSince };
+    return { key: 'late', hoursSince };
+  };
+
+  const getFollowUpMeta = (item: any) => {
+    const { key, hoursSince } = getFollowUpStage(item);
+
+    if (key === 'now') {
+      return {
+        alertText: 'Visualizada há pouco — aguarde um pouco antes de cobrar.',
+        urgencyLabel: 'Aguardando momento ideal',
+        suggestion:
+          'Oi, tudo bem? Vi que você recebeu minha proposta 😊 Se quiser, te explico rapidamente os itens e as opções para avançarmos.',
+        footerHint: 'Melhor janela: em algumas horas',
+      };
+    }
+
+    if (key === 'today') {
+      return {
+        alertText: `Visualizada há ${hoursSince}h — bom momento para retomar.`,
+        urgencyLabel: 'Cobrar hoje',
+        suggestion:
+          'Oi! Passando para saber se conseguiu analisar a proposta. Posso te ajudar com qualquer dúvida para facilitar sua decisão?',
+        footerHint: 'Janela recomendada: agora',
+      };
+    }
+
+    if (key === 'soon') {
+      return {
+        alertText: `Sem retorno há ${Math.floor(hoursSince / 24)} dia(s) — follow-up recomendado.`,
+        urgencyLabel: 'Cobrar agora',
+        suggestion:
+          'Oi! Retomando nosso contato sobre a proposta. Se fizer sentido, posso ajustar algum item para encaixar melhor no que você precisa.',
+        footerHint: 'Prioridade alta',
+      };
+    }
+
+    return {
+      alertText: `Sem retorno há ${Math.floor(hoursSince / 24)}+ dias — alto risco de esfriar.`,
+      urgencyLabel: 'Urgente',
+      suggestion:
+        'Oi! Último lembrete sobre a proposta 😊 Ainda tenho disponibilidade para te atender. Quer que eu reserve essa condição para você?',
+      footerHint: 'Ação imediata',
+    };
+  };
+
   const sendWhatsApp = (item: any) => {
     const nomeEmpresa = profile?.company_name || "Nossa Empresa";
     const nomeDono = profile?.owner_name || "Consultor";
-    let message = `Olá, *${item.client_name}*!\nSegue a proposta da *${nomeEmpresa}*:\n\n`;
+    const isVisualizada = item?.status === 'visualizada';
+    const followUp = getFollowUpMeta(item);
+
+    let message = `Olá, *${item.client_name}*!\n`;
+
+    if (isVisualizada) {
+      message += `${followUp.suggestion}\n\n`;
+    } else {
+      message += `Segue a proposta da *${nomeEmpresa}*:\n\n`;
+    }
 
     if (item.items && item.items.length > 0) {
       item.items.forEach((sub: any) => {
@@ -477,7 +540,7 @@ export default function ProposalsTab() {
                               {isVisualizada && userPlan === 'pro' && (
                                 <View style={styles.followupAlert}>
                                   <IconClock color={C.blue} />
-                                  <Text style={styles.followupAlertText}>Aberta recentemente — agir agora!</Text>
+                                  <Text style={styles.followupAlertText}>{getFollowUpMeta(item).alertText}</Text>
                                 </View>
                               )}
                               {isVisualizada && userPlan !== 'pro' && (
@@ -504,8 +567,11 @@ export default function ProposalsTab() {
 
                               {userPlan === 'pro' ? (
                                 <View style={styles.followupBox}>
-                                  <Text style={styles.followupBoxTitle}>Sugestão de mensagem:</Text>
-                                  <Text style={styles.followupBoxMsg}>"Oi, vi que você recebeu minha proposta. Posso tirar alguma dúvida sobre os serviços?"</Text>
+                                  <Text style={styles.followupBoxTitle}>
+                                    {getFollowUpMeta(item).urgencyLabel} · Sugestão de mensagem:
+                                  </Text>
+                                  <Text style={styles.followupBoxMsg}>{getFollowUpMeta(item).suggestion}</Text>
+                                  <Text style={styles.followupHint}>{getFollowUpMeta(item).footerHint}</Text>
                                 </View>
                               ) : (
                                 <TouchableOpacity style={[styles.followupBox, { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' }]} activeOpacity={0.9} onPress={() => router.push('/upgrade' as any)}>
@@ -696,6 +762,7 @@ const styles = StyleSheet.create({
   followupBox: { backgroundColor: C.blueBg, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 12, marginBottom: 14 },
   followupBoxTitle: { fontWeight: '700', color: C.blueText, fontSize: 11, marginBottom: 4, textTransform: 'uppercase' },
   followupBoxMsg: { color: C.blueLink, fontSize: 12, fontStyle: 'italic' },
+  followupHint: { marginTop: 6, fontSize: 11, color: C.blueText, fontWeight: '700' },
   actionRow: { flexDirection: 'row', gap: 8, marginBottom: 4 },
   btnSmGreen: { flex: 1, backgroundColor: C.greenWa, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   btnSmGreenText: { color: C.white, fontSize: 13, fontWeight: '700' },
