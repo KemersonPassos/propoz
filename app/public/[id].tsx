@@ -45,7 +45,7 @@ export default function PublicProposal() {
   const [loading, setLoading] = useState(true);
   const [showConfetti, setShowConfetti] = useState(false);
   const [approving, setApproving] = useState(false);
-  const [printing, setPrinting] = useState(false);
+
 
   useEffect(() => {
     if (id) {
@@ -132,16 +132,7 @@ export default function PublicProposal() {
     });
   };
 
-  const handlePrint = () => {
-    setPrinting(true);
-    if (typeof window !== 'undefined' && window.print) {
-      window.print();
-      setTimeout(() => setPrinting(false), 1000);
-    } else {
-      alert('Impressão/PDF não suportada neste dispositivo.');
-      setPrinting(false);
-    }
-  };
+
 
   if (loading) {
     return (
@@ -176,7 +167,7 @@ export default function PublicProposal() {
       </View>
 
       <ScrollView style={s.scrollArea} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={s.proposalPaper}>
+        <View style={s.proposalPaper} nativeID="proposal-content">
           <View style={s.paperHeader}>
             {vendor?.logo_url ? (
               <Image source={{ uri: vendor.logo_url }} style={s.logoContainer} />
@@ -268,24 +259,13 @@ export default function PublicProposal() {
           </TouchableOpacity>
         )}
 
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <TouchableOpacity 
-            style={[s.btnSendOutline, { flex: 1 }]} 
-            activeOpacity={0.8} 
-            onPress={handleWhatsApp}
-          >
-            <Text style={s.btnSendOutlineTxt}>WhatsApp</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[s.btnSend, { flex: 1.5, backgroundColor: C.blue }]}
-            activeOpacity={0.8}
-            onPress={handlePrint}
-            disabled={printing}
-          >
-            <Text style={s.btnSendTxt}>{printing ? 'Aguarde...' : 'Baixar PDF'}</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity 
+          style={[s.btnSendOutline, { flex: 1 }]} 
+          activeOpacity={0.8} 
+          onPress={handleWhatsApp}
+        >
+          <Text style={s.btnSendOutlineTxt}>WhatsApp</Text>
+        </TouchableOpacity>
       </View>
 
       {showConfetti && (

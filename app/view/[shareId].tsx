@@ -17,9 +17,7 @@ import {
 } from 'react-native';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import Svg, { Circle, Line, Path, Polygon, Polyline, Rect } from 'react-native-svg';
-import * as Print from 'expo-print';
 import { supabase } from '../../lib/supabase';
-import { generateProposalPdfHtml } from '../../lib/pdfTemplate';
 
 // Tokens
 const C = {
@@ -100,7 +98,6 @@ export default function ViewProposal() {
   const [loading, setLoading] = useState(true);
   const [showConfetti, setShowConfetti] = useState(false);
   const [approving, setApproving] = useState(false);
-  const [printing, setPrinting] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -206,72 +203,7 @@ export default function ViewProposal() {
     });
   };
 
-  const handleExportPDFClient = async () => {
-    const htmlContent = generateProposalPdfHtml(proposal, vendor);
 
-    // ── WEB: gera PDF real via html2pdf.js ──
-    if (Platform.OS === 'web') {
-      try {
-        setPrinting(true);
-
-        const cssMatch = htmlContent.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
-        const css = cssMatch ? cssMatch[1] : '';
-        const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-        const bodyContent = bodyMatch ? bodyMatch[1] : htmlContent;
-
-        const printContainer = document.createElement('div');
-        printContainer.id = 'propoz-print-container';
-        printContainer.innerHTML = bodyContent;
-        
-        const styleEl = document.createElement('style');
-        styleEl.id = 'propoz-print-style';
-        styleEl.textContent = css;
-
-        // Esconde a interface principal do React para que só a proposta seja impressa
-        const rootSelectors = document.querySelectorAll('#root, #__next');
-        rootSelectors.forEach((el) => { (el as HTMLElement).style.display = 'none'; });
-
-        document.head.appendChild(styleEl);
-        document.body.appendChild(printContainer);
-        document.body.style.backgroundColor = '#F8FAFC';
-
-        // Timeout curto para o DOM e estilos atualizarem
-        setTimeout(() => {
-          const defaultTitle = document.title;
-          const clientName = proposal?.client_name || 'proposta';
-          document.title = `Proposta - ${clientName}`;
-          
-          window.print();
-          
-          // Restaura a página principal assim que o print (dialog) terminar
-          document.head.removeChild(styleEl);
-          document.body.removeChild(printContainer);
-          document.body.style.backgroundColor = '';
-          rootSelectors.forEach((el) => { (el as HTMLElement).style.display = ''; });
-          document.title = defaultTitle;
-          
-          setPrinting(false);
-        }, 150);
-
-      } catch (e: any) {
-        console.log('PDF error:', e);
-        Alert.alert('Erro', 'Não foi possível gerar o PDF. Tente novamente.');
-        setPrinting(false);
-      }
-      return;
-    }
-
-
-    // ── NATIVO (app mobile): usa expo-print igual ao fluxo do app ──
-    try {
-      setPrinting(true);
-      await Print.printAsync({ html: htmlContent });
-    } catch (e: any) {
-      Alert.alert('Erro', 'Falha ao preparar o PDF. ' + e.message);
-    } finally {
-      setPrinting(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -462,15 +394,10 @@ export default function ViewProposal() {
             {approving ? <ActivityIndicator color="#fff" /> : <Text style={s.btnAprovarTxt}>Aprovar Proposta</Text>}
           </TouchableOpacity>
         )}
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <TouchableOpacity style={[s.btnWppOutline, { flex: 1, paddingHorizontal: 0 }]} activeOpacity={0.8} onPress={handleWhatsApp}>
+        <TouchableOpacity style={[s.btnWppOutline, { flex: 1, paddingHorizontal: 0 }]} activeOpacity={0.8} onPress={handleWhatsApp}>
             <IconWpp fill={C.ink} width={18} height={18} />
             <Text style={[s.btnWppOutlineTxt, { fontSize: 13 }]}>WhatsApp</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[s.btnDownloadPdf, { flex: 1.5, paddingHorizontal: 0 }]} activeOpacity={0.8} onPress={handleExportPDFClient} disabled={printing}>
-            <Text style={[s.btnDownloadPdfTxt, { fontSize: 13 }]}>{printing ? 'Processando...' : 'Baixar PDF'}</Text>
-          </TouchableOpacity>
-        </View>
       </View>
 
       {showConfetti && (
@@ -683,10 +610,4 @@ const s = StyleSheet.create({
     borderRadius: 14, paddingVertical: 16, paddingHorizontal: 24,
   },
   btnWppOutlineTxt: { fontSize: 16, fontWeight: '700', color: C.ink, fontFamily: 'sans-serif' },
-  btnDownloadPdf: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    backgroundColor: C.blue,
-    borderRadius: 14, paddingVertical: 16, paddingHorizontal: 24,
-  },
-  btnDownloadPdfTxt: { fontSize: 16, fontWeight: '700', color: '#fff', fontFamily: 'sans-serif' },
 });

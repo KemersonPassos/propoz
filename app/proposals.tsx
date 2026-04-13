@@ -105,6 +105,9 @@ export default function ProposalsTab() {
   const [optionsModalVisible, setOptionsModalVisible] = useState(false);
   const [selectedProposal, setSelectedProposal] = useState<any>(null);
 
+  // Filtro
+  const [filterMode, setFilterMode] = useState<'geral' | 'clients'>('geral');
+
   const closeSwipeables = () => {
     if (openedRowRef.current) {
       openedRowRef.current.close();
@@ -298,6 +301,22 @@ export default function ProposalsTab() {
               <Text style={styles.btnNewText}>+ Nova</Text>
             </TouchableOpacity>
           </View>
+          <View style={styles.filterBar}>
+            <TouchableOpacity
+              style={[styles.filterBtn, filterMode === 'geral' && styles.filterBtnActive]}
+              onPress={() => setFilterMode('geral')}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.filterBtnTxt, filterMode === 'geral' && styles.filterBtnTxtActive]}>Geral</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.filterBtn, filterMode === 'clients' && styles.filterBtnActive]}
+              onPress={() => setFilterMode('clients')}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.filterBtnTxt, filterMode === 'clients' && styles.filterBtnTxtActive]}>Por Cliente</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView
@@ -349,6 +368,67 @@ export default function ProposalsTab() {
                 <Text style={styles.freeAlertText}>Você tem <Text style={{ fontWeight: '700' }}>{userPlan === 'pro' ? 'propostas ilimitadas' : '5 propostas grátis'}</Text> este mês.</Text>
               </View>
             </View>
+          ) : filterMode === 'clients' ? (
+            <>
+              {(() => {
+                const grouped: Record<string, any[]> = {};
+                proposals.forEach(p => {
+                  const key = p.client_name || 'Sem nome';
+                  if (!grouped[key]) grouped[key] = [];
+                  grouped[key].push(p);
+                });
+                const sortedKeys = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
+                return sortedKeys.map(clientKey => (
+                  <View key={clientKey} style={{ marginBottom: 20 }}>
+                    <View style={styles.clientGroupHeader}>
+                      <View style={styles.clientGroupAvatar}>
+                        <Text style={styles.clientGroupAvatarTxt}>{clientKey.charAt(0).toUpperCase()}</Text>
+                      </View>
+                      <Text style={styles.clientGroupName}>{clientKey}</Text>
+                      <View style={styles.clientGroupBadge}>
+                        <Text style={styles.clientGroupBadgeTxt}>{grouped[clientKey].length}</Text>
+                      </View>
+                    </View>
+                    {grouped[clientKey].map((item) => {
+                      const tagStyle = getTagStyle(item.status);
+                      const isAprovada = item.status === 'fechada';
+                      return (
+                        <View key={item.id} style={styles.swipeWrap}>
+                          <TouchableOpacity
+                            style={styles.proposalCard}
+                            onPress={() => {
+                              if (activeSwipeId) { closeSwipeables(); return; }
+                              router.push(`/proposal/${item.id}` as any);
+                            }}
+                            activeOpacity={0.9}
+                          >
+                            <View style={styles.proposalHead}>
+                              <View style={styles.proposalTopRow}>
+                                <Text style={styles.proposalClient} numberOfLines={1}>{item.client_name}</Text>
+                                <View style={[styles.tag, tagStyle.bg]}>
+                                  <Text style={[styles.tagText, tagStyle.text]}>{getStatusLabel(item.status)}</Text>
+                                </View>
+                              </View>
+                              <View style={styles.proposalBottomRow}>
+                                <Text style={styles.proposalMeta} numberOfLines={1}>
+                                  <Text style={styles.totalValueGreenList}>
+                                    R$ {Number(item.value).toLocaleString('pt-BR')}
+                                  </Text>
+                                  <Text style={{ color: C.subtle }}> · {item.service_type ?? 'Serviço'}</Text>
+                                </Text>
+                                <Text style={styles.proposalStatusSub}>
+                                  {isAprovada ? <Text style={{ color: C.greenText, fontWeight: '600' }}>Fechado!</Text> : 'há pouco'}
+                                </Text>
+                              </View>
+                            </View>
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ));
+              })()}
+            </>
           ) : (
             <>
               {proposals.map((item) => {
@@ -367,7 +447,6 @@ export default function ProposalsTab() {
                         }
                         openedRowRef.current = item.swipeableRef;
                         setActiveSwipeId(item.id);
-                        // Fecha expansão ao abrir swipe
                         if (expandedId === item.id) {
                           setExpandedId(null);
                         }
@@ -566,6 +645,17 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 24, fontWeight: '700', color: C.white, letterSpacing: -0.5 },
   btnNew: { backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8 },
   btnNewText: { color: C.white, fontSize: 13, fontWeight: '600' },
+  filterBar: { flexDirection: 'row', marginTop: 14, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 10, padding: 3 },
+  filterBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
+  filterBtnActive: { backgroundColor: '#fff' },
+  filterBtnTxt: { fontSize: 13, fontWeight: '600', color: 'rgba(255,255,255,0.65)' },
+  filterBtnTxtActive: { color: C.blue },
+  clientGroupHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 10, paddingHorizontal: 4 },
+  clientGroupAvatar: { width: 30, height: 30, borderRadius: 15, backgroundColor: C.blueBg, alignItems: 'center', justifyContent: 'center' },
+  clientGroupAvatarTxt: { fontSize: 13, fontWeight: '700', color: C.blue },
+  clientGroupName: { flex: 1, fontSize: 15, fontWeight: '700', color: C.ink },
+  clientGroupBadge: { backgroundColor: C.blueBg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  clientGroupBadgeTxt: { fontSize: 11, fontWeight: '700', color: C.blue },
   body: { flex: 1 },
   bodyContent: { padding: 16, paddingTop: 24, paddingBottom: 40 },
   emptyBodyContent: { flexGrow: 1, padding: 20, justifyContent: 'center' },

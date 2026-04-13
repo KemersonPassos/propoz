@@ -78,12 +78,22 @@ export default function NewProposal() {
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [profile, setProfile] = useState<any>(null);
 
+  // Estado de clientes
+  const [clients, setClients] = useState<any[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+
   // Campos de Configuração
   const [validade, setValidade] = useState('7 dias');
   const [pagamento, setPagamento] = useState('PIX / À vista');
   const [prazo, setPrazo] = useState('Imediato');
   const [garantia, setGarantia] = useState('');
   const [observacoes, setObservacoes] = useState('');
+
+  // Estado para edição de preço
+  const [editingService, setEditingService] = useState<any>(null);
+  const [editPrice, setEditPrice] = useState('');
+  const [savingPrice, setSavingPrice] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -101,7 +111,12 @@ export default function NewProposal() {
       const { data: prof } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
       setProfile(prof);
 
-      // 2. Carregar catálogo APENAS do usuário logado
+      // 2. Carregar clientes do usuário
+      const { data: clientsData } = await supabase
+        .from('clients').select('*').eq('user_id', user.id).order('name', { ascending: true });
+      if (clientsData) setClients(clientsData);
+
+      // 3. Carregar catálogo APENAS do usuário logado
       const { data, error } = await supabase
         .from('services').select('*').eq('user_id', user.id).eq('is_active', true).order('category', { ascending: true });
       if (error) throw error;
@@ -168,6 +183,51 @@ export default function NewProposal() {
 
   const calculateTotal = () => Object.values(selectedItems).reduce((acc: number, item: any) => acc + (item.price * item.qty), 0);
 
+  // ── Edição de preço ──
+  const openPriceEdit = (service: any) => {
+    const currentPrice = selectedItems[service.id]?.price ?? service.price;
+    setEditingService(service);
+    setEditPrice(String(currentPrice).replace('.', ','));
+  };
+
+  const applyPriceThisProposal = () => {
+    if (!editingService) return;
+    const parsed = parseFloat(editPrice.replace(',', '.')) || 0;
+    const svc = editingService;
+    const currentQty = selectedItems[svc.id]?.qty || 1;
+    setSelectedItems((prev: any) => ({
+      ...prev,
+      [svc.id]: { ...svc, price: parsed, qty: currentQty }
+    }));
+    setEditingService(null);
+  };
+
+  const applyPriceAndSave = async () => {
+    if (!editingService) return;
+    const parsed = parseFloat(editPrice.replace(',', '.')) || 0;
+    const svc = editingService;
+    setSavingPrice(true);
+    try {
+      // Atualiza no Supabase
+      await supabase.from('services').update({ price: parsed }).eq('id', svc.id);
+      // Atualiza o catálogo local
+      setServices(prev => prev.map(s => s.id === svc.id ? { ...s, price: parsed } : s));
+      // Atualiza o item selecionado se existir
+      const currentQty = selectedItems[svc.id]?.qty || 0;
+      if (currentQty > 0) {
+        setSelectedItems((prev: any) => ({
+          ...prev,
+          [svc.id]: { ...svc, price: parsed, qty: currentQty }
+        }));
+      }
+    } catch (e: any) {
+      Alert.alert('Erro', 'Não foi possível salvar o preço no catálogo.');
+    } finally {
+      setSavingPrice(false);
+      setEditingService(null);
+    }
+  };
+
   const handleSave = async (shouldShare: boolean) => {
     setLoading(true);
 
@@ -183,8 +243,29 @@ export default function NewProposal() {
       const itemsArray = Object.values(selectedItems);
       const total = calculateTotal();
 
+      // Auto-registro de cliente
+      let finalClientId = selectedClientId;
+      if (!finalClientId && clientName.trim()) {
+        // Verifica se já existe um cliente com esse nome exato
+        const existing = clients.find(c => c.name.toLowerCase() === clientName.trim().toLowerCase());
+        if (existing) {
+          finalClientId = existing.id;
+        } else {
+          // Cria automaticamente
+          const { data: newClient } = await supabase.from('clients').insert([{
+            user_id: user?.id,
+            name: clientName.trim()
+          }]).select('id').single();
+          if (newClient) {
+            finalClientId = newClient.id;
+            setClients(prev => [...prev, { id: newClient.id, name: clientName.trim(), user_id: user?.id }]);
+          }
+        }
+      }
+
       const { data, error } = await supabase.from('proposals').insert([{
         client_name: clientName,
+        client_id: finalClientId,
         value: total,
         user_id: user?.id,
         items: itemsArray,
@@ -284,25 +365,80 @@ export default function NewProposal() {
 
         <ScrollView style={s.body} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
           <Text style={s.sectionLabel}>CLIENTE</Text>
-          <TextInput
-            style={s.input}
-            placeholder="Ex: Condomínio Solar"
-            value={clientName}
-            onChangeText={setClientName}
-            placeholderTextColor={C.subtle}
-          />
+          <View style={{ position: 'relative', zIndex: 10 }}>
+            <TextInput
+              style={s.input}
+              placeholder="Ex: Condomínio Solar"
+              value={clientName}
+              onChangeText={(text) => {
+                setClientName(text);
+                setSelectedClientId(null);
+                setShowClientSuggestions(text.length > 0);
+              }}
+              onFocus={() => { if (clientName.length > 0) setShowClientSuggestions(true); }}
+              onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
+              placeholderTextColor={C.subtle}
+            />
+            {showClientSuggestions && (() => {
+              const filtered = clients.filter(c => c.name.toLowerCase().includes(clientName.toLowerCase()));
+              const exactMatch = clients.some(c => c.name.toLowerCase() === clientName.trim().toLowerCase());
+              if (filtered.length === 0 && !clientName.trim()) return null;
+              return (
+                <View style={s.suggestionsBox}>
+                  {filtered.slice(0, 5).map(client => (
+                    <TouchableOpacity
+                      key={client.id}
+                      style={s.suggestionRow}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        setClientName(client.name);
+                        setSelectedClientId(client.id);
+                        setShowClientSuggestions(false);
+                      }}
+                    >
+                      <View style={s.suggestionAvatar}>
+                        <Text style={s.suggestionAvatarTxt}>{client.name.charAt(0).toUpperCase()}</Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.suggestionName}>{client.name}</Text>
+                        {client.phone && <Text style={s.suggestionMeta}>{client.phone}</Text>}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                  {!exactMatch && clientName.trim().length > 0 && (
+                    <TouchableOpacity
+                      style={s.suggestionNewRow}
+                      activeOpacity={0.7}
+                      onPress={() => {
+                        setShowClientSuggestions(false);
+                      }}
+                    >
+                      <Text style={s.suggestionNewTxt}>+ Novo cliente “{clientName.trim()}”</Text>
+                      <Text style={s.suggestionNewSub}>Será cadastrado ao salvar a proposta</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })()}
+          </View>
 
           <Text style={s.sectionLabel}>SERVIÇOS DISPONÍVEIS</Text>
           {loadingCatalog ? <ActivityIndicator color={C.blue} /> : (
             <View style={s.servicesCard}>
               {services.map((item, idx) => {
                 const qty = selectedItems[item.id]?.qty || 0;
+                const displayPrice = selectedItems[item.id]?.price ?? item.price;
                 const isSelected = qty > 0;
                 return (
                   <View key={item.id} style={[s.serviceRow, isSelected && s.serviceRowActive, idx === services.length - 1 && { borderBottomWidth: 0 }]}>
                     <TouchableOpacity style={s.serviceLeft} onPress={() => updateQuantity(item, isSelected ? -qty : 1)} activeOpacity={0.7}>
                       <View style={[s.checkbox, isSelected && s.checkboxActive]}>{isSelected && <IconCheck />}</View>
-                      <Text style={[s.serviceName, isSelected && { color: C.blueText }]}>{item.name}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[s.serviceName, isSelected && { color: C.blueText }]} numberOfLines={1}>{item.name}</Text>
+                        <TouchableOpacity onPress={() => openPriceEdit(item)} activeOpacity={0.6} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                          <Text style={s.servicePrice}>R$ {displayPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} <Text style={s.servicePriceEdit}>✎</Text></Text>
+                        </TouchableOpacity>
+                      </View>
                     </TouchableOpacity>
                     <View style={s.stepper}>
                       <TouchableOpacity onPress={() => updateQuantity(item, -1)} style={s.stepBtn}><Text style={s.stepText}>-</Text></TouchableOpacity>
@@ -502,6 +638,62 @@ export default function NewProposal() {
             </View>
           </View>
         </Modal>
+
+        {/* Modal Edição de Preço */}
+        <Modal visible={!!editingService} animationType="fade" transparent onRequestClose={() => setEditingService(null)}>
+          <TouchableOpacity style={s.priceOverlay} activeOpacity={1} onPress={() => setEditingService(null)}>
+            <TouchableOpacity activeOpacity={1} style={s.priceSheet}>
+              <View style={s.priceSheetHandle} />
+              <Text style={s.priceSheetTitle}>Editar preço</Text>
+              <Text style={s.priceSheetSub}>{editingService?.name}</Text>
+
+              <View style={s.priceInputRow}>
+                <Text style={s.priceInputPrefix}>R$</Text>
+                <TextInput
+                  style={s.priceInput}
+                  value={editPrice}
+                  onChangeText={setEditPrice}
+                  keyboardType="numeric"
+                  selectTextOnFocus
+                  autoFocus
+                />
+              </View>
+
+              <TouchableOpacity style={s.priceOptionBtn} onPress={applyPriceThisProposal} activeOpacity={0.8}>
+                <View style={s.priceOptionIcon}>
+                  <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={C.blue} strokeWidth={2}>
+                    <Path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                    <Polyline points="14,2 14,8 20,8" />
+                  </Svg>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.priceOptionTitle}>Apenas nesta proposta</Text>
+                  <Text style={s.priceOptionSub}>O catálogo permanece inalterado</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[s.priceOptionBtn, { borderColor: C.blueBorder, backgroundColor: C.blueBg }]} onPress={applyPriceAndSave} disabled={savingPrice} activeOpacity={0.8}>
+                <View style={[s.priceOptionIcon, { backgroundColor: C.blue }]}> 
+                  {savingPrice ? <ActivityIndicator color="#fff" size="small" /> : (
+                    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2}>
+                      <Path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
+                      <Polyline points="17,21 17,13 7,13 7,21" />
+                      <Polyline points="7,3 7,8 15,8" />
+                    </Svg>
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.priceOptionTitle, { color: C.blue }]}>Salvar no catálogo</Text>
+                  <Text style={s.priceOptionSub}>Atualiza o preço para futuros orçamentos</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={s.priceCancelBtn} onPress={() => setEditingService(null)} activeOpacity={0.7}>
+                <Text style={s.priceCancelTxt}>Cancelar</Text>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
       </View>
     </KeyboardAvoidingView>
   );
@@ -572,5 +764,30 @@ const s = StyleSheet.create({
   btnSend: { backgroundColor: C.greenWa, borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 12 },
   btnSendTxt: { color: '#fff', fontSize: 16, fontWeight: '700' },
   btnSaveOnly: { backgroundColor: '#fff', borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 12, marginBottom: 20 },
-  btnSaveOnlyTxt: { color: C.muted, fontSize: 14, fontWeight: '600' }
+  btnSaveOnlyTxt: { color: C.muted, fontSize: 14, fontWeight: '600' },
+  servicePrice: { fontSize: 12, color: C.muted, fontWeight: '500', marginTop: 1 },
+  servicePriceEdit: { fontSize: 11, color: C.subtle },
+  priceOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  priceSheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 24 },
+  priceSheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#E2E8F0', alignSelf: 'center', marginBottom: 20 },
+  priceSheetTitle: { fontSize: 18, fontWeight: '700', color: C.ink, marginBottom: 2 },
+  priceSheetSub: { fontSize: 13, color: C.muted, marginBottom: 20 },
+  priceInputRow: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: C.blue, borderRadius: 12, backgroundColor: C.blueBg, paddingHorizontal: 14, marginBottom: 20 },
+  priceInputPrefix: { fontSize: 16, fontWeight: '700', color: C.blue, marginRight: 6 },
+  priceInput: { flex: 1, fontSize: 22, fontWeight: '700', color: C.ink, paddingVertical: 14 },
+  priceOptionBtn: { flexDirection: 'row', alignItems: 'center', gap: 14, borderWidth: 1, borderColor: C.borderLight, borderRadius: 14, padding: 16, marginBottom: 10 },
+  priceOptionIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: C.blueBg, alignItems: 'center', justifyContent: 'center' },
+  priceOptionTitle: { fontSize: 14, fontWeight: '700', color: C.ink },
+  priceOptionSub: { fontSize: 11, color: C.muted, marginTop: 2 },
+  priceCancelBtn: { alignItems: 'center', paddingVertical: 14, marginTop: 4 },
+  priceCancelTxt: { fontSize: 14, fontWeight: '600', color: C.muted },
+  suggestionsBox: { position: 'absolute', top: 50, left: 0, right: 0, backgroundColor: '#fff', borderWidth: 1, borderColor: C.borderLight, borderRadius: 12, elevation: 8, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, zIndex: 20, overflow: 'hidden' },
+  suggestionRow: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10, borderBottomWidth: 1, borderBottomColor: C.borderLight },
+  suggestionAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: C.blueBg, alignItems: 'center', justifyContent: 'center' },
+  suggestionAvatarTxt: { fontSize: 13, fontWeight: '700', color: C.blue },
+  suggestionName: { fontSize: 14, fontWeight: '600', color: C.ink },
+  suggestionMeta: { fontSize: 11, color: C.muted, marginTop: 1 },
+  suggestionNewRow: { padding: 12, borderTopWidth: 1, borderTopColor: C.borderLight, backgroundColor: C.bgLight },
+  suggestionNewTxt: { fontSize: 13, fontWeight: '700', color: C.blue },
+  suggestionNewSub: { fontSize: 10, color: C.muted, marginTop: 2 },
 });
